@@ -18,6 +18,36 @@
 // dropped on re-encode, and output formats are JPEG, PNG and WebP.
 const fs = require("fs");
 
+// Is the first element <svg>? Skips an XML declaration, comments and a
+// doctype in front of it, by position (no pattern to backtrack on).
+function startsWithSvg(text) {
+  let rest = text.trimStart();
+  for (let skipped = 0; skipped < 32; skipped++) {
+    const lower = rest.slice(0, 9).toLowerCase();
+    let end;
+    if (lower.indexOf("<?xml") === 0) {
+      end = rest.indexOf("?>");
+      end = end === -1 ? -1 : end + 2;
+    } else if (lower.indexOf("<!--") === 0) {
+      end = rest.indexOf("-->", 4);
+      end = end === -1 ? -1 : end + 3;
+    } else if (lower.indexOf("<!doctype") === 0) {
+      end = rest.indexOf(">");
+      end = end === -1 ? -1 : end + 1;
+    } else {
+      return (
+        lower.indexOf("<svg") === 0 &&
+        (rest.length === 4 || " \t\r\n>/".indexOf(rest.charAt(4)) !== -1)
+      );
+    }
+    if (end === -1) {
+      return false;
+    }
+    rest = rest.slice(end).trimStart();
+  }
+  return false;
+}
+
 function detectFormat(bytes) {
   const b = bytes;
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
@@ -54,12 +84,7 @@ function detectFormat(bytes) {
   if (b.length >= 2 && b[0] === 0x42 && b[1] === 0x4d) {
     return "bmp";
   }
-  const head = b.toString("utf8", 0, Math.min(b.length, 1024)).trimStart();
-  if (
-    /^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(
-      head,
-    )
-  ) {
+  if (startsWithSvg(b.toString("utf8", 0, Math.min(b.length, 4096)))) {
     return "svg";
   }
   return "";

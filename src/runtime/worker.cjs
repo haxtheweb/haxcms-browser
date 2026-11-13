@@ -263,7 +263,27 @@ const handlers = {
 };
 
 // message type -> handler; only these names can be called
-const handlerFor = new Map(Object.entries(handlers));
+// Each message type is named here: nothing a message says picks a function.
+function handle(message) {
+  switch (message.type) {
+    case "boot":
+      return handlers.boot(message);
+    case "request":
+      return handlers.request(message);
+    case "useStorage":
+      return handlers.useStorage(message);
+    case "refreshStorage":
+      return handlers.refreshStorage(message);
+    case "signIn":
+      return handlers.signIn(message);
+    case "readFile":
+      return handlers.readFile(message);
+    case "hashPassword":
+      return handlers.hashPassword(message);
+    default:
+      throw new Error("unknown message type " + String(message.type));
+  }
+}
 
 // One message at a time. A message that never settles would hold up every
 // later one, so two things end it early: an error nothing caught while it
@@ -290,15 +310,9 @@ function run(message) {
       () => reject(new Error(message.type + " took too long and was stopped")),
       MESSAGE_TIMEOUT_MS,
     );
-    const handler = handlerFor.get(message.type);
-    if (typeof handler !== "function") {
-      clearTimeout(timer);
-      reject(new Error("unknown message type " + message.type));
-      return;
-    }
     failCurrent = reject;
     Promise.resolve()
-      .then(() => handler(message))
+      .then(() => handle(message))
       .then(resolve, reject)
       .finally(() => clearTimeout(timer));
   }).finally(() => {
