@@ -1,0 +1,64 @@
+name: build
+on:
+  push:
+    branches: [main]
+  # No branch filter: stacked PRs (base is another feature branch, not main)
+  # must run the tests too, otherwise they merge with no CI signal.
+  pull_request:
+  # Nightly against haxcms-nodejs main, so a change there that breaks the
+  # browser runtime shows up even on days with no commits here.
+  schedule:
+    - cron: "41 8 * * *" # nightly, 08:41 UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-test:
+    # Builds and tests against the latest haxcms-nodejs main, not the
+    # published package: the runtime must keep up with what is about to ship.
+    name: "node.js ${{ matrix.node-version }} against haxcms-nodejs main"
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout haxcms-nodejs main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: haxtheweb/haxcms-nodejs
+          ref: main
+          path: .haxcms-nodejs
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install haxcms-nodejs main (no lifecycle scripts)
+        # haxcms-nodejs pins its tree with yarn.lock (no package-lock.json)
+        working-directory: .haxcms-nodejs
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Format check
+        run: npm run format:check
+      - name: Build
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+        run: npm run build
+      - name: Test (headless Chrome)
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: npm test
+      - name: Security lint (blocking)
+        run: npm run lint:security
+      - name: Lint
+        run: npm run lint

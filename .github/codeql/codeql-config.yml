@@ -1,0 +1,7 @@
+name: "haxtheweb/haxcms-browser CodeQL config"
+
+# Tests drive a local headless browser and are not shipped; dist/ is build
+# output (third-party code bundled from node_modules) and is not committed.
+paths-ignore:
+  - test/**
+  - dist/**
