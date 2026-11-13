@@ -576,10 +576,34 @@
     }
   }
 
+  // Take the HAXcms page out of the frame and wait until it is gone. A page
+  // left open across a restart keeps asking for things: its requests fail
+  // while HAXcms is down, it signs itself out, and that sign-out lands on
+  // the HAXcms that has just started (the user then meets a sign-in form).
+  function emptyFrame() {
+    if (!frame.getAttribute("src")) {
+      return Promise.resolve();
+    }
+    frame.hidden = true;
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 5000);
+      frame.addEventListener(
+        "load",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      frame.contentWindow.location.replace("about:blank");
+    });
+  }
+
   async function restart(chosen) {
     running = false;
     saveProblem = false;
     setStatus("Starting HAXcms in your browser…", "");
+    await emptyFrame();
     stopWorker();
     cookies.clear();
     await boot(chosen);

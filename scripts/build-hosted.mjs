@@ -27,25 +27,65 @@ function run(command, args, options) {
   execFileSync(command, args, { stdio: "inherit", cwd: root, ...options });
 }
 
+// Steps that use the network (fetching haxcms-nodejs and its packages) fail
+// now and then on a build host; try them again before giving up.
+function runWithRetries(step, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      step();
+      return;
+    } catch (error) {
+      if (attempt >= attempts) {
+        throw error;
+      }
+      console.log(
+        "That step failed (" +
+          String((error && error.message) || error).split("\n")[0] +
+          "); trying again, attempt " +
+          (attempt + 1) +
+          " of " +
+          attempts,
+      );
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        attempt * 3000,
+      );
+    }
+  }
+}
+
 if (!/^[\w./-]+$/.test(ref) || ref.startsWith("-")) {
   throw new Error("HAXCMS_NODEJS_REF is not a branch or tag name: " + ref);
 }
 
-fs.rmSync(checkout, { recursive: true, force: true });
-run("git", [
-  "clone",
-  "--depth",
-  "1",
-  "--branch",
-  ref,
-  "--",
-  REPOSITORY,
-  checkout,
-]);
-run(
-  "yarn",
-  ["install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"],
-  { cwd: checkout },
+runWithRetries(() => {
+  fs.rmSync(checkout, { recursive: true, force: true });
+  run("git", [
+    "clone",
+    "--depth",
+    "1",
+    "--branch",
+    ref,
+    "--",
+    REPOSITORY,
+    checkout,
+  ]);
+});
+runWithRetries(() =>
+  run(
+    "yarn",
+    [
+      "install",
+      "--frozen-lockfile",
+      "--ignore-scripts",
+      "--non-interactive",
+      "--network-timeout",
+      "120000",
+    ],
+    { cwd: checkout },
+  ),
 );
 
 const env = {
