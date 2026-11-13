@@ -94,5 +94,11 @@ const env = {
 };
 run(process.execPath, ["scripts/build.mjs"], { env });
 run(process.execPath, ["scripts/bundle-license-check.mjs"], { env });
+// A build host can hand back part of an earlier site/ from its cache (Vercel
+// keeps every node_modules folder, and the front-end build under
+// site/public is full of them). build-site.mjs refuses to clear a folder it
+// does not recognise as its own, so clear this one here: in a hosted build
+// site/ is only ever this script's output.
+fs.rmSync(path.join(root, "site"), { recursive: true, force: true });
 run(process.execPath, ["scripts/build-site.mjs", "--out", "site"], { env });
 console.log("Site is in site/");
