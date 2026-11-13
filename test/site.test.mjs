@@ -26,6 +26,7 @@ let host;
 let frame;
 let mount;
 const escaped = [];
+const runtimeErrors = [];
 
 before(async () => {
   if (!fs.existsSync(path.join(root, "dist", "haxcms-worker.js"))) {
@@ -50,6 +51,15 @@ before(async () => {
     defaultViewport: { width: 1280, height: 800 },
   });
   host = await browser.newPage();
+  // errors the runtime logs while answering a request, for failure messages
+  host.on("console", (entry) => {
+    if (
+      entry.type() === "error" &&
+      /error in API route|haxcms-browser/.test(entry.text())
+    ) {
+      runtimeErrors.push(entry.text().slice(0, 600));
+    }
+  });
   await host.goto(server.url, { waitUntil: "load" });
   await host.waitForFunction(
     () =>
@@ -215,6 +225,294 @@ test("a session that is not open says so instead of failing oddly", async () => 
     { timeout: 15000 },
   );
   await page.close();
+});
+
+// ---- where sites are saved ---------------------------------------------
+
+async function waitReady(page) {
+  await page.waitForFunction(
+    () =>
+      ["ready", "error"].includes(document.getElementById("dot").dataset.state),
+    { timeout: 90000 },
+  );
+  const frame = page.frames().find((f) => f.url().includes("/app/"));
+  await frame.waitForFunction(
+    () => globalThis.appSettings && globalThis.appSettings.jwt,
+    { timeout: 30000 },
+  );
+  return frame;
+}
+
+// the site names the dashboard would list
+function listSites(frame) {
+  return frame.evaluate(async () => {
+    const s = globalThis.appSettings;
+    const response = await fetch("system/api/v1/sites", {
+      headers: {
+        authorization: "Bearer " + s.jwt,
+        "x-haxcms-user-token": s.userToken,
+      },
+    });
+    const body = await response.json();
+    return body.data.items.map((item) => item.metadata.site.name).sort();
+  });
+}
+
+// every file below a folder in the browser's private file system
+function listFolder(page, name) {
+  return page.evaluate(async (name) => {
+    const root = await navigator.storage.getDirectory();
+    const out = [];
+    const walk = async (dir, prefix) => {
+      for await (const [entryName, entry] of dir.entries()) {
+        const relative = prefix + entryName;
+        if (entry.kind === "directory") {
+          await walk(entry, relative + "/");
+        } else {
+          out.push(relative);
+        }
+      }
+    };
+    await walk(await root.getDirectoryHandle(name), "");
+    return out.sort();
+  }, name);
+}
+
+test("sites are saved in the browser and are still there after a reload", async () => {
+  assert.match(
+    await host.$eval("#note", (el) => el.textContent),
+    /^Saved in this browser/,
+  );
+  // the site made earlier went to the browser's storage, as a HAXsite folder
+  const stored = await listFolder(host, "haxcms-sites");
+  assert.ok(
+    stored.includes(SITE + "/site.json"),
+    stored.slice(0, 5).join(", "),
+  );
+  assert.ok(stored.some((file) => file.startsWith(SITE + "/pages/")));
+  // the links haxcms-nodejs puts in a site to its shared front-end build
+  // only make sense inside the runtime, and are not written out
+  assert.deepEqual(
+    stored.filter((file) => /^[^/]+\/(build|dist|node_modules)\//.test(file)),
+    [],
+  );
+
+  await host.reload({ waitUntil: "load" });
+  frame = await waitReady(host);
+  mount = new URL(frame.url()).pathname;
+  assert.deepEqual(await listSites(frame), [SITE]);
+  // and the page saved earlier came back with it
+  const page = await frame.evaluate(async (site) => {
+    const manifest = await (
+      await fetch("_sites/" + site + "/site.json")
+    ).json();
+    return (
+      await fetch("_sites/" + site + "/" + manifest.items[0].location)
+    ).text();
+  }, SITE);
+  assert.match(page, /Saved from the smoke test/);
+});
+
+test("a second tab does not save over the first", async () => {
+  const second = await browser.newPage();
+  await second.goto(server.url, { waitUntil: "load" });
+  await waitReady(second);
+  assert.match(
+    await second.$eval("#note", (el) => el.textContent),
+    /^Not being saved: HAXcms is already open in another tab/,
+  );
+  await second.close();
+});
+
+// The folder picker is a native dialog, so the tests hand the page a folder
+// the same way the picker would: a directory handle. These come from the
+// browser's private file system, which is the same kind of object.
+async function pickFolder(page, name, files) {
+  await page.evaluate(
+    async (name, files) => {
+      const root = await navigator.storage.getDirectory();
+      const folder = await root.getDirectoryHandle(name, { create: true });
+      for (const [file, text] of Object.entries(files || {})) {
+        const parts = file.split("/");
+        let dir = folder;
+        for (const part of parts.slice(0, -1)) {
+          dir = await dir.getDirectoryHandle(part, { create: true });
+        }
+        const writable = await (
+          await dir.getFileHandle(parts[parts.length - 1], { create: true })
+        ).createWritable();
+        await writable.write(text);
+        await writable.close();
+      }
+      globalThis.showDirectoryPicker = async () => folder;
+    },
+    name,
+    files,
+  );
+  await page.click("#folder-button");
+}
+
+test("a folder that is not for HAX sites is refused, and says why", async () => {
+  await pickFolder(host, "documents", { "taxes.txt": "private" });
+  await host.waitForFunction(
+    () =>
+      /has other things in it/.test(
+        document.getElementById("note").textContent,
+      ),
+    { timeout: 10000 },
+  );
+  await pickFolder(host, "one-site", { "site.json": "{}" });
+  await host.waitForFunction(
+    () =>
+      /is a single HAX site/.test(document.getElementById("note").textContent),
+    { timeout: 10000 },
+  );
+  // still saving where it was
+  assert.deepEqual(await listSites(frame), [SITE]);
+});
+
+test("Save to a folder: sites are written there, and later saves follow", async () => {
+  await pickFolder(host, "my-hax-sites");
+  await host.waitForFunction(
+    () =>
+      /^Saving to the folder "my-hax-sites"/.test(
+        document.getElementById("note").textContent,
+      ),
+    { timeout: 30000 },
+  );
+  let files = await listFolder(host, "my-hax-sites");
+  assert.ok(files.includes(SITE + "/site.json"), files.slice(0, 5).join(", "));
+
+  // a new site made after the switch lands in the folder
+  const created = await frame.evaluate(async () => {
+    const s = globalThis.appSettings;
+    const response = await fetch("system/api/v1/sites", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + s.jwt,
+        "x-haxcms-user-token": s.userToken,
+      },
+      body: JSON.stringify({
+        site: { name: "second-site" },
+        build: { type: "own", structure: "course", items: null, files: null },
+        theme: { name: "clean-one", variables: {} },
+      }),
+    });
+    return response.status;
+  });
+  assert.equal(created, 200);
+  files = await listFolder(host, "my-hax-sites");
+  assert.ok(files.includes("second-site/site.json"));
+
+  // coming back later: the folder is remembered and HAXcms starts from it
+  await host.reload({ waitUntil: "load" });
+  frame = await waitReady(host);
+  mount = new URL(frame.url()).pathname;
+  assert.match(
+    await host.$eval("#note", (el) => el.textContent),
+    /^Saving to the folder "my-hax-sites"/,
+  );
+  assert.deepEqual(await listSites(frame), ["second-site", SITE].sort());
+});
+
+test("a save that cannot reach the folder is reported as failed", async () => {
+  // the folder disappears (moved, deleted, drive unplugged)
+  await host.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry("my-hax-sites", { recursive: true });
+  });
+  const saved = await frame.evaluate(async (site) => {
+    const s = globalThis.appSettings;
+    const manifest = await (
+      await fetch("_sites/" + site + "/site.json")
+    ).json();
+    const item = manifest.items[0];
+    const response = await fetch(
+      "_sites/" + site + "/x/api/v1/content/" + item.id,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + s.jwt,
+          "x-haxcms-site-token": s.siteToken,
+        },
+        body: JSON.stringify({
+          site: { name: site },
+          body:
+            '<page-break title="' +
+            item.title +
+            '" item-id="' +
+            item.id +
+            '"></page-break><p>This must not be reported as saved</p>',
+        }),
+      },
+    );
+    return { status: response.status, body: await response.text() };
+  }, SITE);
+  assert.equal(saved.status, 500, saved.body);
+  assert.equal(
+    JSON.parse(saved.body).data.code,
+    "BROWSER_STORAGE_WRITE_FAILED",
+  );
+  // and the bar says so
+  assert.equal(
+    await host.$eval("#status", (el) => el.textContent),
+    "Not saved: your last change did not reach storage",
+  );
+  assert.equal(await host.$eval("#dot", (el) => el.dataset.state), "error");
+});
+
+test("Stop using the folder goes back to the browser's storage", async () => {
+  await host.click("#browser-button");
+  await host.waitForFunction(
+    () =>
+      /^Saved in this browser/.test(
+        document.getElementById("note").textContent,
+      ),
+    { timeout: 60000 },
+  );
+  frame = await waitReady(host);
+  mount = new URL(frame.url()).pathname;
+  // the browser's own copy only has what was made before the folder
+  assert.deepEqual(await listSites(frame), [SITE]);
+});
+
+test("HAXcms's own Download site gives a zip of the site", async () => {
+  const result = await frame.evaluate(async (site) => {
+    const s = globalThis.appSettings;
+    const headers = {
+      "content-type": "application/json",
+      authorization: "Bearer " + s.jwt,
+      "x-haxcms-user-token": s.userToken,
+    };
+    const response = await fetch("system/api/v1/sites/" + site + "/download", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ site: { name: site } }),
+    });
+    const text = await response.text();
+    if (response.status !== 200) {
+      return { status: response.status, text: text.slice(0, 300) };
+    }
+    const link = JSON.parse(text).data.link;
+    const zip = new Uint8Array(await (await fetch(link)).arrayBuffer());
+    return {
+      status: response.status,
+      name: JSON.parse(text).data.name,
+      // a zip file starts with "PK"
+      signature: String.fromCharCode(zip[0], zip[1]),
+      bytes: zip.length,
+    };
+  }, SITE);
+  assert.equal(
+    result.status,
+    200,
+    result.text + "\n" + runtimeErrors.join("\n"),
+  );
+  assert.equal(result.name, SITE + ".zip");
+  assert.equal(result.signature, "PK");
+  assert.ok(result.bytes > 1000, "zip has content: " + result.bytes);
 });
 
 test("nothing HAXcms asks for reaches the web server", () => {

@@ -148,7 +148,7 @@ function framePage(url) {
     '<span class="dot" data-state="ready" aria-hidden="true"></span>' +
     "<span>HAXcms is running in your browser</span></p>" +
     '<p class="bar-note">This page comes from the tab where you started HAXcms. ' +
-    "Keep that tab open: reloading or closing it ends the session and its sites.</p>" +
+    "Keep that tab open while you work here.</p>" +
     '<nav class="bar-links" aria-label="About this demo">' +
     '<a href="https://haxtheweb.org/" target="_blank" rel="noopener">Install HAX</a>' +
     "</nav></header>" +
@@ -329,7 +329,7 @@ async function handle(event, url) {
     return page(
       503,
       "This HAXcms session is not open",
-      "HAXcms runs inside the page that started it, and that page is closed or was reloaded. Sites made in the browser demo are kept in memory, so they are gone when it closes.",
+      "HAXcms runs inside the page that started it, and that page is closed or was reloaded. Open HAXcms again to carry on; this address belonged to the earlier session.",
     );
   }
   if (result.error) {

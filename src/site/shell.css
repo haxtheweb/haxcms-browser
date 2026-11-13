@@ -47,10 +47,19 @@ body {
   flex: 1 1 320px;
   opacity: 0.92;
 }
+.bar-note[data-state="warning"],
+.bar-note[data-state="notice"] {
+  color: var(--wait);
+  opacity: 1;
+}
 .bar-links {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 6px 12px;
+}
+.bar [hidden] {
+  display: none;
 }
 .bar a,
 .bar button {

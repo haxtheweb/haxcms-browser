@@ -7,4 +7,16 @@ import { Buffer } from "buffer";
 const setImmediate = (fn, ...args) => setTimeout(fn, 0, ...args);
 const clearImmediate = (id) => clearTimeout(id);
 
+// some packages reach for these through the global object instead of by name
+for (const [name, value] of Object.entries({
+  process,
+  Buffer,
+  setImmediate,
+  clearImmediate,
+})) {
+  if (typeof globalThis[name] === "undefined") {
+    globalThis[name] = value;
+  }
+}
+
 export { process, Buffer, setImmediate, clearImmediate };
