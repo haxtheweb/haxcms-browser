@@ -640,6 +640,37 @@ test("Stop using the folder goes back to the browser's storage", async () => {
   assert.deepEqual(await listSites(frame), [SITE]);
 });
 
+test("HAXcms comes back signed in every time it is restarted", async () => {
+  // changing where sites are saved restarts HAXcms; the dashboard must not
+  // meet the user with its login form afterwards (the second and later
+  // starts are the fast ones, with every file already cached)
+  for (let round = 0; round < 4; round++) {
+    await host.evaluate(() => {
+      document.getElementById("browser-button").click();
+    });
+    await host.waitForFunction(
+      () => document.getElementById("dot").dataset.state !== "ready",
+      { timeout: 10000 },
+    );
+    frame = await waitReady(host);
+    mount = new URL(frame.url()).pathname;
+    const signedIn = await frame
+      .waitForFunction(
+        () => {
+          const app = document.querySelector("app-hax");
+          return !!(app && app.store && app.store.isLoggedIn && app.store.jwt);
+        },
+        { timeout: 15000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+    assert.equal(signedIn, true, "signed in after restart " + (round + 1));
+  }
+  assert.deepEqual(await listSites(frame), [SITE]);
+});
+
 test("a site can be saved as a template (skeleton) and its skeleton downloaded", async () => {
   const result = await frame.evaluate(async (site) => {
     const s = globalThis.appSettings;
