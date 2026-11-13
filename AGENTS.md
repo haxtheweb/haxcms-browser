@@ -20,7 +20,7 @@ https://github.com/haxtheweb/praw, and is read from there instead of being copie
 - **saveOutline / outline-designer saving is mission-critical.** Changes that touch saving must keep success and failure behavior identical, including "a failed save does not write".
 - **Never weaken content sanitizing.** Sites made here get deployed elsewhere. If a sanitize dependency (jsdom) can't run, the feature stays unavailable until a replacement produces the same output.
 - **Licenses.** The bundle ships dependency code. Only Apache-2.0-compatible permissive licenses (MIT, BSD, ISC, Apache-2.0, ...). No LGPL/GPL/MPL packages in the runtime, even if a review entry would let the check pass.
-- **Test against haxcms-nodejs main**, not only the published package (`HAXCMS_NODEJS_SRC`).
+- **Test against haxcms-nodejs main**, not only the published package (`HAXCMS_NODEJS_SRC`). When a change needs haxcms-nodejs changed too, use the same branch name in both repos: CI here builds against that branch until it lands.
 - No optional chaining (`?.`); use `globalThis`, not `window` (the runtime is a Worker).
 
 ## Commands
@@ -38,7 +38,7 @@ npm run lint:security
 
 - `scripts/build.mjs`: the esbuild bundle (built-in swaps, unavailable-package stubs, data snapshot)
 - `src/runtime/worker.cjs`: the Worker and its message protocol
-- `src/runtime/shims/`: Node built-ins the Worker provides itself (fs → memfs, process, os, crypto with scrypt, async_hooks)
+- `src/runtime/shims/`: Node built-ins the Worker provides itself (fs → memfs, http → requests dispatched to the Express app, process, os, crypto with scrypt / KeyObject / randomInt, net address checks, tty, async_hooks)
 - `test/`: parity scenario, Node runner, and the headless Chrome test
 
 ## Pull requests

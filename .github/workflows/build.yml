@@ -14,8 +14,9 @@ permissions:
   contents: read
 jobs:
   build-and-test:
-    # Builds and tests against the latest haxcms-nodejs main, not the
-    # published package: the runtime must keep up with what is about to ship.
+    # Builds and tests against the latest haxcms-nodejs main (or the matching
+    # branch, see below), not the published package: the runtime must keep up
+    # with what is about to ship.
     name: "node.js ${{ matrix.node-version }} against haxcms-nodejs main"
     strategy:
       fail-fast: false
@@ -27,11 +28,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Checkout haxcms-nodejs main
+      # A change here that needs a haxcms-nodejs change goes on a branch with
+      # the same name in both repos; until that lands, CI builds against it.
+      - name: Pick the haxcms-nodejs branch
+        id: nodejs-ref
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          ref=main
+          if [ -n "$HEAD_REF" ] && git ls-remote --exit-code --heads https://github.com/haxtheweb/haxcms-nodejs.git "refs/heads/$HEAD_REF" > /dev/null; then
+            ref="$HEAD_REF"
+          fi
+          echo "haxcms-nodejs ref: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Checkout haxcms-nodejs
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: haxtheweb/haxcms-nodejs
-          ref: main
+          ref: ${{ steps.nodejs-ref.outputs.ref }}
           path: .haxcms-nodejs
           persist-credentials: false
       - name: Set up Node.js
@@ -41,7 +55,7 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Install haxcms-nodejs main (no lifecycle scripts)
+      - name: Install haxcms-nodejs (no lifecycle scripts)
         # haxcms-nodejs pins its tree with yarn.lock (no package-lock.json)
         working-directory: .haxcms-nodejs
         run: yarn install --frozen-lockfile --ignore-scripts --non-interactive

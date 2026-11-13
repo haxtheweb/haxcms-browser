@@ -111,6 +111,7 @@ test("boots haxcms-nodejs in a Worker and reports what is unavailable", async ()
     (await fetch("/haxcms-snapshot.json")).json(),
   );
   const booted = await send("boot", { snapshot, root: "/haxcms" });
+  assert.equal(booted.mode, "multisite");
   assert.ok(Array.isArray(booted.unavailable));
   // the runtime must say which server-only pieces it replaced
   for (const name of ["child_process", "sharp"]) {
@@ -118,20 +119,22 @@ test("boots haxcms-nodejs in a Worker and reports what is unavailable", async ()
   }
 });
 
-test("saveOutline: browser and Node produce the same results", async () => {
-  let siteDirectory = null;
+test("HTTP API: browser and Node give the same results", async () => {
   const browserResult = await runScenario({
-    async createSite(name) {
-      siteDirectory = (await send("createSite", { name })).siteDirectory;
-    },
-    async saveOutline(body) {
-      return send("route", { route: "saveOutline", body });
-    },
-    async readSiteJson() {
-      const b64 = await send("readFile", {
-        path: siteDirectory + "/site.json",
-      });
-      return Buffer.from(b64, "base64").toString("utf8");
+    async request(method, url, options) {
+      const opts = options || {};
+      const headers = Object.assign({}, opts.headers || {});
+      let body = null;
+      if (opts.json) {
+        headers["content-type"] = "application/json";
+        body = Buffer.from(JSON.stringify(opts.json)).toString("base64");
+      }
+      const res = await send("request", { method, url, headers, body });
+      return {
+        status: res.status,
+        headers: res.headers,
+        text: Buffer.from(res.body, "base64").toString("utf8"),
+      };
     },
   });
   const hash = await send("hashPassword", { password: "parity-check" });
@@ -142,7 +145,7 @@ test("saveOutline: browser and Node produce the same results", async () => {
       src,
       Buffer.from(hash).toString("base64") + ":parity-check",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", timeout: 120000 },
   );
   const line = (node.stdout || "")
     .split("\n")
@@ -152,10 +155,25 @@ test("saveOutline: browser and Node produce the same results", async () => {
 
   assert.deepEqual(browserResult.steps, nodeResult.steps);
   assert.deepEqual(browserResult.outline, nodeResult.outline);
+  // the scenario has to have worked, not just failed the same way twice
+  const status = (name) =>
+    browserResult.steps.find((s) => s.step === name).status;
+  assert.equal(status("create site"), 200);
+  assert.equal(status("seed A, B"), 200);
+  assert.ok(status("outline without a site token (refused)") >= 400);
   // failed saves must not write, in either runtime
-  for (const step of browserResult.steps.filter((s) => s.status >= 400)) {
+  for (const step of browserResult.steps.filter(
+    (s) => s.status >= 400 && "siteJsonUnchanged" in s,
+  )) {
     assert.equal(step.siteJsonUnchanged, true, step.step);
   }
+  // the new site's starter page stays; outline saves don't delete it
+  assert.deepEqual(browserResult.outline, [
+    "A < (root) #1",
+    "B < (root) #0",
+    "C < A #0",
+    "Welcome < (root) #0",
+  ]);
   // a password hash made in the browser verifies on a Node server
   assert.equal(nodeResult.verifiesBrowserHash, true);
 });
