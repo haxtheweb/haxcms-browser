@@ -138,3 +138,4 @@ parity-results
 
 # haxcms-nodejs checkout that CI builds and tests against (HAXCMS_NODEJS_SRC)
 .haxcms-nodejs
+/site

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HAXcms in your browser</title>
+    <meta
+      name="description"
+      content="Try HAXcms with nothing installed. It runs entirely in this browser tab."
+    />
+    <link rel="stylesheet" href="./shell.css" />
+  </head>
+  <body>
+    <header class="bar" role="banner">
+      <p class="bar-status">
+        <span class="dot" id="dot" aria-hidden="true"></span>
+        <span id="status" role="status">Starting HAXcms in your browser…</span>
+      </p>
+      <p class="bar-note" id="note">
+        Nothing is installed and nothing is sent to a server. Sites you make
+        here are kept in this tab's memory and are gone when you reload or close
+        it.
+      </p>
+      <nav class="bar-links" aria-label="About this demo">
+        <button
+          type="button"
+          id="details-button"
+          aria-expanded="false"
+          aria-controls="details"
+        >
+          Details
+        </button>
+        <a href="https://haxtheweb.org/" target="_blank" rel="noopener"
+          >Install HAX</a
+        >
+      </nav>
+    </header>
+    <section
+      class="details"
+      id="details"
+      hidden
+      aria-label="Details about this demo"
+    >
+      <dl id="details-list"></dl>
+      <p>
+        Found a problem? Report it at
+        <a
+          href="https://github.com/haxtheweb/issues/issues"
+          target="_blank"
+          rel="noopener"
+          >github.com/haxtheweb/issues</a
+        >
+        and include the build line above.
+      </p>
+    </section>
+    <main class="stage">
+      <div class="message" id="message" hidden></div>
+      <iframe id="app" title="HAXcms" hidden></iframe>
+    </main>
+    <script src="./shell.js"></script>
+    <script src="./frame.js"></script>
+  </body>
+</html>

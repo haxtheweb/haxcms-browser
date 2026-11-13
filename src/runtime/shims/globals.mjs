@@ -2,4 +2,9 @@
 import process from "./process.cjs";
 import { Buffer } from "buffer";
 
-export { process, Buffer };
+// Node's setImmediate: run after the current work, before timers that are
+// due later. A zero-delay timeout is the closest a Worker has.
+const setImmediate = (fn, ...args) => setTimeout(fn, 0, ...args);
+const clearImmediate = (id) => clearTimeout(id);
+
+export { process, Buffer, setImmediate, clearImmediate };

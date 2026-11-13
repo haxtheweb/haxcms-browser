@@ -4,3 +4,4 @@ coverage
 package-lock.json
 # haxcms-nodejs checkout that CI builds and tests against
 .haxcms-nodejs
+/site
