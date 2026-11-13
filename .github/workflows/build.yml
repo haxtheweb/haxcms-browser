@@ -42,8 +42,9 @@ jobs:
       - name: Install
         run: npm ci
       - name: Install haxcms-nodejs main (no lifecycle scripts)
+        # haxcms-nodejs pins its tree with yarn.lock (no package-lock.json)
         working-directory: .haxcms-nodejs
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Format check

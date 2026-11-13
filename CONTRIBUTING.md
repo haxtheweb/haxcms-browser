@@ -30,7 +30,7 @@ You need Node.js 18.20.3 or newer, git, and Chrome or Chromium (the tests run th
 ```bash
 git clone https://github.com/haxtheweb/haxcms-browser.git
 git clone https://github.com/haxtheweb/haxcms-nodejs.git
-cd haxcms-nodejs && npm ci --ignore-scripts && cd ..
+cd haxcms-nodejs && yarn install --frozen-lockfile --ignore-scripts && cd ..
 cd haxcms-browser && npm ci
 export HAXCMS_NODEJS_SRC=../haxcms-nodejs/src
 npm run build

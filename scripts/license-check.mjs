@@ -281,7 +281,8 @@ function checkDependencies(mode, baseLockFile) {
   let targets = [...current.values()];
   let heading = "Dependency license sweep (full tree, package-lock.json)";
   if (mode === "diff") {
-    const base = lockPackages(baseLockFile);
+    // a base branch with no lockfile yet (a new repo): every package is new
+    const base = baseLockFile ? lockPackages(baseLockFile) : new Map();
     targets = targets.filter((pkg) => !base.has(`${pkg.name}@${pkg.version}`));
     heading = "Dependency license check (new dependencies in this PR)";
   }
@@ -389,13 +390,19 @@ function main(argv) {
   }
   if (baseIdx !== -1) {
     const baseLock = argv[baseIdx + 1];
-    if (!baseLock || !fs.existsSync(baseLock)) {
-      console.log(
-        `::error title=Dependency license::base lockfile not found: ${baseLock}`,
-      );
+    if (!baseLock) {
+      console.log("::error title=Dependency license::--base-lock needs a file");
       return false;
     }
-    ok = checkDependencies("diff", baseLock) && ok;
+    if (!fs.existsSync(baseLock)) {
+      // the base branch has no package-lock.json yet: check the whole tree
+      console.log(
+        `::notice title=Dependency license::no base lockfile at ${baseLock}; checking every dependency as new`,
+      );
+    }
+    ok =
+      checkDependencies("diff", fs.existsSync(baseLock) ? baseLock : null) &&
+      ok;
   }
   return ok;
 }
