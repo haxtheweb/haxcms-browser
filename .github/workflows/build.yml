@@ -30,13 +30,16 @@ jobs:
           persist-credentials: false
       # A change here that needs a haxcms-nodejs change goes on a branch with
       # the same name in both repos; until that lands, CI builds against it.
+      # Pull requests only: pushes, the nightly run and manual runs always
+      # use main.
       - name: Pick the haxcms-nodejs branch
         id: nodejs-ref
         env:
+          EVENT_NAME: ${{ github.event_name }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
           ref=main
-          if [ -n "$HEAD_REF" ] && git ls-remote --exit-code --heads https://github.com/haxtheweb/haxcms-nodejs.git "refs/heads/$HEAD_REF" > /dev/null; then
+          if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$HEAD_REF" ] && git ls-remote --exit-code --heads https://github.com/haxtheweb/haxcms-nodejs.git "refs/heads/$HEAD_REF" > /dev/null; then
             ref="$HEAD_REF"
           fi
           echo "haxcms-nodejs ref: $ref"
@@ -50,9 +53,11 @@ jobs:
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        # No dependency cache: this job can build a haxcms-nodejs branch
+        # other than main, and nothing it runs should be able to write a
+        # cache that default-branch runs restore.
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
       - name: Install
         run: npm ci
       - name: Install haxcms-nodejs (no lifecycle scripts)
