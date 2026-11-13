@@ -24,12 +24,14 @@
     "test": "node --test test/*.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:security": "eslint --config eslint.security.config.mjs \"src/**/*.cjs\" \"scripts/**/*.mjs\"",
+    "lint:security": "eslint --config eslint.security.config.mjs \"src/**/*.cjs\" \"src/**/*.js\" \"scripts/**/*.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "precheck": "node scripts/precheck.mjs",
     "precheck:fix": "node scripts/precheck.mjs --fix",
-    "check:bundle-licenses": "node scripts/bundle-license-check.mjs"
+    "check:bundle-licenses": "node scripts/bundle-license-check.mjs",
+    "build:site": "node scripts/build-site.mjs",
+    "serve": "node scripts/serve-site.mjs"
   },
   "files": [
     "dist"

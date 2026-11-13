@@ -40,6 +40,7 @@ export default [
     // (exercised by `npm test`) are not linted.
     ignores: [
       "dist/**",
+      "site/**",
       "node_modules/**",
       "coverage/**",
       ".haxcms-nodejs/**",
@@ -90,6 +91,24 @@ export default [
   {
     files: ["src/runtime/**/*.mjs"],
     languageOptions: { sourceType: "module" },
+  },
+  {
+    // the host page and its service worker: plain scripts, served as they are
+    files: ["src/site/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      globals: { ...globals.browser, ...globals.serviceworker },
+    },
+    rules: {
+      "no-restricted-syntax": restricted,
+      "no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", caughtErrors: "none" },
+      ],
+      eqeqeq: "error",
+      "no-var": "error",
+    },
   },
   eslintConfigPrettier,
 ];

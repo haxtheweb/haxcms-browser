@@ -1,0 +1,80 @@
+name: pages
+# Builds the hosted demo (HAXcms running in the browser) and publishes it to
+# GitHub Pages: https://haxtheweb.github.io/haxcms-browser/
+#
+# The demo is the Worker bundle, the host page and its service worker, plus
+# haxcms-nodejs main's own front-end build copied in as static files, so the
+# editor and the backend it talks to always come from the same commit.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  # Nightly, so the demo follows haxcms-nodejs main without a commit here.
+  schedule:
+    - cron: "11 9 * * *" # 09:11 UTC, after the nightly build
+  workflow_dispatch:
+permissions:
+  contents: read
+# one deployment at a time; let a running one finish
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    name: build the demo site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout haxcms-nodejs main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: haxtheweb/haxcms-nodejs
+          ref: main
+          path: .haxcms-nodejs
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install haxcms-nodejs (no lifecycle scripts)
+        working-directory: .haxcms-nodejs
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+      - name: Build the Worker
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+        run: npm run build
+      - name: Test (headless Chrome)
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: npm test
+      - name: Assemble the site
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+        run: node scripts/build-site.mjs --out site
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+  deploy:
+    name: publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -26,11 +26,15 @@ export default [
     },
   },
   {
-    files: ["src/runtime/**/*.cjs"],
+    files: ["src/runtime/**/*.cjs", "src/site/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",
-      globals: { ...globals.worker, ...globals.commonjs },
+      globals: {
+        ...globals.worker,
+        ...globals.commonjs,
+        ...globals.browser,
+      },
     },
     rules: {
       "no-restricted-syntax": ["error", noInterpolatedExec, noOptionalChaining],

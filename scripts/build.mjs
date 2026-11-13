@@ -99,7 +99,6 @@ const unavailablePackages = [
   "epub-gen-memory",
   "git-interface",
   "html-to-docx",
-  "jsdom",
   "mammoth",
   "open",
   "puppeteer-core",
@@ -214,6 +213,19 @@ function snapshot() {
   };
   add(path.join(SRC, "boilerplate"));
   add(path.join(SRC, "coreConfig"));
+  // the OpenAPI specs the API serves and validates against
+  if (fs.existsSync(path.join(SRC, "openapi"))) {
+    add(path.join(SRC, "openapi"));
+  }
+  // the dashboard page and its small assets. The front-end build itself
+  // (public/build, the wc-registry files) is far too big for the volume; a
+  // host page serves it as static files instead (see scripts/build-site.mjs).
+  for (const name of ["index.html", "manifest.json", "assets"]) {
+    const file = path.join(SRC, "public", name);
+    if (fs.existsSync(file)) {
+      add(file);
+    }
+  }
   for (const name of fs.readdirSync(path.join(SRC, "lib"))) {
     if (/\.(json|ya?ml)$/.test(name)) {
       add(path.join(SRC, "lib", name));

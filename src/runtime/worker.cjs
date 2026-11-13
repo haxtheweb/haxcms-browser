@@ -5,13 +5,24 @@
  * { id, ok, result } or { id, ok: false, error } out. Messages are handled
  * one at a time, in order.
  *
- *   boot        { snapshot, root }  load the data snapshot into the volume and
+ *   boot        { snapshot, root, basePath }
+ *                                   load the data snapshot into the volume and
  *                                   start haxcms-nodejs (the full Express app,
- *                                   embedded) with root as its HAXcms root
- *   request     { method, url, headers, body, pageOrigin }
+ *                                   embedded) with root as its HAXcms root.
+ *                                   basePath is where the page mounts HAXcms
+ *                                   (e.g. "/haxcms-browser/app/"), used for
+ *                                   the links HAXcms generates
+ *   request     { method, url, headers, body, pageOrigin, binary }
  *                                   send one HTTP request through the app;
  *                                   resolves { status, statusText, headers,
- *                                   body } (bodies are base64)
+ *                                   body }. Bodies are base64 strings, or
+ *                                   ArrayBuffers (in: when given one, out:
+ *                                   when binary is true)
+ *   signIn      {}                  sign in as the local user through the real
+ *                                   login route, with the credentials
+ *                                   haxcms-nodejs seeded on first boot;
+ *                                   resolves the login response (the host
+ *                                   keeps its Set-Cookie for the session)
  *   readFile    { path }            read a file from the volume (base64)
  *   hashPassword { password }       HAXCMS.hashPassword (portability check)
  *
@@ -25,8 +36,8 @@
  * Requests are addressed to the internal origin http://localhost: the Host
  * header is always "localhost", and Origin / Referer are rewritten from the
  * page's origin to it, so haxcms-nodejs's same-origin checks see a local
- * request. Anything from another origin keeps its value and is refused by
- * those checks as usual.
+ * request. Anything from another origin keeps
+ * its value and is refused by those checks as usual.
  */
 const fs = require("fs");
 const path = require("path");
@@ -44,7 +55,7 @@ function requireBooted() {
 }
 
 const handlers = {
-  async boot({ snapshot, root }) {
+  async boot({ snapshot, root, basePath }) {
     if (state.HAXCMS) {
       throw new Error("already booted");
     }
@@ -71,6 +82,9 @@ const handlers = {
     }
     await appModule.appReady;
     const { HAXCMS } = require("haxcms-nodejs/lib/HAXCMS.js");
+    if (basePath) {
+      HAXCMS.basePath = String(basePath);
+    }
     state.app = appModule.app;
     state.HAXCMS = HAXCMS;
     return {
@@ -79,7 +93,7 @@ const handlers = {
       unavailable: Array.from(globalThis.__haxcmsUnavailable || []).sort(),
     };
   },
-  async request({ method, url, headers, body, pageOrigin }) {
+  async request({ method, url, headers, body, pageOrigin, binary }) {
     requireBooted();
     const target = String(url || "/");
     if (target.charAt(0) !== "/") {
@@ -92,13 +106,20 @@ const handlers = {
     }
     out.host = "localhost";
     if (pageOrigin) {
+      // Only the origin changes. Paths keep the mount: HAXcms was told its
+      // basePath on boot and expects to see it in a Referer.
       for (const name of ["origin", "referer"]) {
         if (out[name] && out[name].indexOf(pageOrigin) === 0) {
           out[name] = INTERNAL_ORIGIN + out[name].slice(pageOrigin.length);
         }
       }
     }
-    const payload = body ? Buffer.from(body, "base64") : null;
+    let payload = null;
+    if (typeof body === "string") {
+      payload = Buffer.from(body, "base64");
+    } else if (body) {
+      payload = Buffer.from(body);
+    }
     if (payload && out["content-length"] === undefined) {
       out["content-length"] = String(payload.length);
     }
@@ -108,12 +129,49 @@ const handlers = {
       headers: out,
       body: payload,
     });
+    const bytes = response.body;
     return {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
-      body: response.body.toString("base64"),
+      body: binary
+        ? bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          )
+        : bytes.toString("base64"),
     };
+  },
+  async signIn() {
+    const HAXCMS = requireBooted();
+    const passwordFile = path.join(
+      HAXCMS.configDirectory,
+      ".initial-admin-password",
+    );
+    if (!fs.existsSync(passwordFile)) {
+      throw new Error("no seeded local user to sign in as");
+    }
+    // "username: <name>" and "password: <value>" lines, then a comment
+    const seeded = {};
+    for (const line of fs.readFileSync(passwordFile, "utf8").split("\n")) {
+      const colon = line.indexOf(":");
+      if (colon > 0 && line.charAt(0) !== "#") {
+        seeded[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+      }
+    }
+    const credentials = {
+      username: seeded.username || HAXCMS.getActiveUserName(),
+      password: seeded.password || "",
+    };
+    return handlers.request({
+      method: "POST",
+      url: "/system/api/v1/session/login",
+      headers: {
+        "content-type": "application/json",
+        origin: INTERNAL_ORIGIN,
+      },
+      body: Buffer.from(JSON.stringify(credentials)).toString("base64"),
+    });
   },
   readFile({ path: file }) {
     requireBooted();
@@ -133,7 +191,9 @@ globalThis.onmessage = (event) => {
         throw new Error("unknown message type " + message.type);
       }
       const result = await handlers[message.type](message);
-      globalThis.postMessage({ id: message.id, ok: true, result });
+      const transfer =
+        result && result.body instanceof ArrayBuffer ? [result.body] : [];
+      globalThis.postMessage({ id: message.id, ok: true, result }, transfer);
     } catch (e) {
       globalThis.postMessage({
         id: message.id,
