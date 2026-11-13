@@ -21,7 +21,7 @@
   "scripts": {
     "prepare": "husky install",
     "build": "node scripts/build.mjs && node scripts/bundle-license-check.mjs",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:security": "eslint --config eslint.security.config.mjs \"src/**/*.cjs\" \"src/**/*.js\" \"scripts/**/*.mjs\"",
@@ -31,6 +31,7 @@
     "precheck:fix": "node scripts/precheck.mjs --fix",
     "check:bundle-licenses": "node scripts/bundle-license-check.mjs",
     "build:site": "node scripts/build-site.mjs",
+    "build:hosted": "node scripts/build-hosted.mjs",
     "serve": "node scripts/serve-site.mjs"
   },
   "files": [

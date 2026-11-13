@@ -47,15 +47,17 @@ const STATUS_CODES = {
 const PAYLOAD = Symbol("payload");
 const METHODS = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"];
 
-// the "connection" a request arrives on: always local, never encrypted
+// the "connection" a request arrives on: always local; "encrypted" when the
+// page it came from is served over https
 class LocalSocket extends EventEmitter {
-  constructor() {
+  constructor(encrypted) {
     super();
     this.remoteAddress = "127.0.0.1";
     this.remotePort = 0;
     this.localAddress = "127.0.0.1";
     this.localPort = 0;
-    this.encrypted = false;
+    // Express reads this to tell http from https
+    this.encrypted = !!encrypted;
     this.readable = true;
     this.writable = true;
     this.destroyed = false;
@@ -229,7 +231,7 @@ function createServer() {
 // with the full response once it finishes.
 function dispatch(handler, init) {
   return new Promise((resolve, reject) => {
-    const socket = new LocalSocket();
+    const socket = new LocalSocket(init && init.encrypted);
     const req = new IncomingMessage(socket, init);
     const res = new ServerResponse(req);
     res.on("finish", () => {

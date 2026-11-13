@@ -60,6 +60,9 @@ const builtins = {
   async_hooks: path.join(SHIMS, "async_hooks.cjs"),
   crypto: path.join(SHIMS, "crypto.cjs"),
   http: path.join(SHIMS, "http.cjs"),
+  // not a Node built-in, but replaced the same way: the browser's own image
+  // decoder and canvas stand in for the native library
+  sharp: path.join(SHIMS, "sharp.cjs"),
   tty: path.join(SHIMS, "tty.cjs"),
   net: path.join(SHIMS, "net.cjs"),
   path: JSPM + "path.js",
@@ -102,7 +105,6 @@ const unavailablePackages = [
   "mammoth",
   "open",
   "puppeteer-core",
-  "sharp",
   "text-readability",
   "unpdf",
   "ws",
@@ -134,6 +136,37 @@ module.exports = stub;
 const haxcmsBrowserPlugin = {
   name: "haxcms-browser",
   setup(build) {
+    // One stream implementation for everything. Several packages bring
+    // their own old copy of Node's streams (readable-stream 2 and 3); mixed
+    // with the Worker's "stream" they break when one pipes into the other
+    // (archiver's folder globbing does). Point them all at "stream".
+    build.onResolve(
+      {
+        filter:
+          /^readable-stream(\/(readable|writable|duplex|transform|passthrough))?$/,
+      },
+      (args) => ({
+        path: args.path,
+        namespace: "one-stream",
+      }),
+    );
+    build.onLoad({ filter: /.*/, namespace: "one-stream" }, (args) => {
+      const part = args.path.split("/")[1];
+      const names = {
+        readable: "Readable",
+        writable: "Writable",
+        duplex: "Duplex",
+        transform: "Transform",
+        passthrough: "PassThrough",
+      };
+      return {
+        loader: "js",
+        resolveDir: SHIMS,
+        contents: part
+          ? `module.exports = require("stream").${names[part]};`
+          : `module.exports = require("stream");`,
+      };
+    });
     // shims reach a @jspm/core module directly with "jspm:<name>"
     build.onResolve({ filter: /^jspm:/ }, (args) => ({
       path: JSPM + args.path.slice(5) + ".js",

@@ -1,5 +1,6 @@
 // A static file server that behaves like GitHub Pages for a project site:
 // the folder is served under /<name>/, anything else on the origin is a 404.
+// With no name it is served at the root, like a site with its own domain.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -25,7 +26,7 @@ const TYPES = {
 };
 
 export function startPagesServer(folder, name, port = 0) {
-  const prefix = "/" + name + "/";
+  const prefix = name ? "/" + name + "/" : "/";
   const rootDir = fs.realpathSync(folder);
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -36,7 +37,7 @@ export function startPagesServer(folder, name, port = 0) {
       res.setHeader("content-type", "text/html; charset=utf-8");
       res.end("<h1>404</h1><p>There isn't a GitHub Pages site here.</p>");
     };
-    if (pathname === "/" + name) {
+    if (name && pathname === "/" + name) {
       res.statusCode = 301;
       res.setHeader("location", prefix);
       res.end();
