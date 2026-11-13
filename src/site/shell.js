@@ -107,9 +107,19 @@
     return features.length ? features.join(", ") : "nothing";
   }
 
+  function showDetailsPanel(open) {
+    details.hidden = !open;
+    detailsButton.setAttribute("aria-expanded", String(open));
+  }
   detailsButton.addEventListener("click", () => {
-    details.hidden = !details.hidden;
-    detailsButton.setAttribute("aria-expanded", String(!details.hidden));
+    showDetailsPanel(details.hidden);
+  });
+  // Escape closes Details from inside it, back on the button that opened it
+  details.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      showDetailsPanel(false);
+      detailsButton.focus();
+    }
   });
 
   // --- where sites are saved ---------------------------------------------
@@ -505,7 +515,10 @@
       term.textContent = label;
       const description = document.createElement("dd");
       description.textContent = value;
-      detailsList.append(term, description);
+      // each pair is a tile: a div is the one wrapper a dl allows
+      const row = document.createElement("div");
+      row.append(term, description);
+      detailsList.append(row);
     };
     if (lastBoot) {
       add(
