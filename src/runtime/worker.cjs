@@ -6,27 +6,35 @@
  * one at a time, in order.
  *
  *   boot        { snapshot, root }  load the data snapshot into the volume and
- *                                   start haxcms-nodejs with root as its
- *                                   HAXcms root
- *   createSite  { name }            HAXCMS.createSite
- *   route       { route, body }     call a site API route handler
+ *                                   start haxcms-nodejs (the full Express app,
+ *                                   embedded) with root as its HAXcms root
+ *   request     { method, url, headers, body, pageOrigin }
+ *                                   send one HTTP request through the app;
+ *                                   resolves { status, statusText, headers,
+ *                                   body } (bodies are base64)
  *   readFile    { path }            read a file from the volume (base64)
  *   hashPassword { password }       HAXCMS.hashPassword (portability check)
  *
- * Route handlers are the real haxcms-nodejs ones. The request is built here
- * as an authenticated local user: the Worker only receives messages from the
- * page that created it, on the user's own machine, so there is no remote
- * caller to authenticate.
+ * Everything runs through the real haxcms-nodejs code. app.js is loaded with
+ * HAXCMS_EMBEDDED=1 (no HTTP server, no listening, no timers; requests are
+ * dispatched to the Express app here) and in local mode
+ * (HAXCMS_DISABLE_JWT_CHECKS, the same single-user mode as `hax serve`): the
+ * Worker only receives messages from the page that created it, on the user's
+ * own machine, so there is no remote caller to authenticate.
+ *
+ * Requests are addressed to the internal origin http://localhost: the Host
+ * header is always "localhost", and Origin / Referer are rewritten from the
+ * page's origin to it, so haxcms-nodejs's same-origin checks see a local
+ * request. Anything from another origin keeps its value and is refused by
+ * those checks as usual.
  */
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 
-const routes = {
-  saveOutline: () =>
-    require("haxcms-nodejs/siteRoutes/v1/routes/saveOutline.js"),
-};
+const INTERNAL_ORIGIN = "http://localhost";
 
-const state = { HAXCMS: null };
+const state = { HAXCMS: null, app: null };
 
 function requireBooted() {
   if (!state.HAXCMS) {
@@ -35,35 +43,8 @@ function requireBooted() {
   return state.HAXCMS;
 }
 
-function localRequest(body) {
-  return {
-    headers: { "x-haxcms-site-token": "local" },
-    haxcmsSiteApiAuth: { authenticated: true, userName: "local" },
-    body: body || {},
-  };
-}
-
-function captureResponse() {
-  return {
-    statusCode: 200,
-    body: null,
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(obj) {
-      this.body = obj;
-      return this;
-    },
-    send(obj) {
-      this.body = obj;
-      return this;
-    },
-  };
-}
-
 const handlers = {
-  boot({ snapshot, root }) {
+  async boot({ snapshot, root }) {
     if (state.HAXCMS) {
       throw new Error("already booted");
     }
@@ -79,31 +60,60 @@ const handlers = {
       volume.mkdirSync(dir, { recursive: true });
     }
     process.env.HAXCMS_ROOT = haxcmsRoot + "/";
+    process.env.HAXCMS_EMBEDDED = "1";
+    process.env.HAXCMS_DISABLE_JWT_CHECKS = "true";
     process.chdir(haxcmsRoot);
+    const appModule = require("haxcms-nodejs/app.js");
+    if (!appModule.embeddedRuntime) {
+      throw new Error(
+        "this haxcms-nodejs does not support HAXCMS_EMBEDDED; build against a version that does",
+      );
+    }
+    await appModule.appReady;
     const { HAXCMS } = require("haxcms-nodejs/lib/HAXCMS.js");
-    // there is no server boundary to check request tokens against
-    HAXCMS.validateRequestToken = () => true;
+    state.app = appModule.app;
     state.HAXCMS = HAXCMS;
     return {
+      mode: HAXCMS.runtimeServerMode || "multisite",
       bootMs: Math.round(performance.now() - start),
       unavailable: Array.from(globalThis.__haxcmsUnavailable || []).sort(),
     };
   },
-  async createSite({ name }) {
-    const HAXCMS = requireBooted();
-    await HAXCMS.createSite(name);
-    const site = await HAXCMS.loadSite(name);
-    return { siteDirectory: site.siteDirectory };
-  },
-  async route({ route, body }) {
+  async request({ method, url, headers, body, pageOrigin }) {
     requireBooted();
-    if (!Object.prototype.hasOwnProperty.call(routes, route)) {
-      throw new Error("unknown route " + route);
+    const target = String(url || "/");
+    if (target.charAt(0) !== "/") {
+      throw new Error("request url must be a path, e.g. /system/api/v1/sites");
     }
-    const handler = routes[route]();
-    const res = captureResponse();
-    await handler(localRequest(body), res);
-    return { status: res.statusCode, body: res.body };
+    const out = {};
+    const incoming = headers || {};
+    for (const name of Object.keys(incoming)) {
+      out[name.toLowerCase()] = String(incoming[name]);
+    }
+    out.host = "localhost";
+    if (pageOrigin) {
+      for (const name of ["origin", "referer"]) {
+        if (out[name] && out[name].indexOf(pageOrigin) === 0) {
+          out[name] = INTERNAL_ORIGIN + out[name].slice(pageOrigin.length);
+        }
+      }
+    }
+    const payload = body ? Buffer.from(body, "base64") : null;
+    if (payload && out["content-length"] === undefined) {
+      out["content-length"] = String(payload.length);
+    }
+    const response = await http.dispatch(state.app, {
+      method,
+      url: target,
+      headers: out,
+      body: payload,
+    });
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+      body: response.body.toString("base64"),
+    };
   },
   readFile({ path: file }) {
     requireBooted();

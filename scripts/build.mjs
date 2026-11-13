@@ -59,6 +59,9 @@ const builtins = {
   process: path.join(SHIMS, "process.cjs"),
   async_hooks: path.join(SHIMS, "async_hooks.cjs"),
   crypto: path.join(SHIMS, "crypto.cjs"),
+  http: path.join(SHIMS, "http.cjs"),
+  tty: path.join(SHIMS, "tty.cjs"),
+  net: path.join(SHIMS, "net.cjs"),
   path: JSPM + "path.js",
   events: JSPM + "events.js",
   stream: JSPM + "stream.js",
@@ -78,16 +81,13 @@ const unavailableBuiltins = new Set([
   "cluster",
   "dgram",
   "dns",
-  "http",
   "http2",
   "https",
   "inspector",
   "module",
-  "net",
   "perf_hooks",
   "readline",
   "tls",
-  "tty",
   "v8",
   "vm",
   "worker_threads",
@@ -191,7 +191,8 @@ module.exports = d;`,
         loader: "js",
         contents:
           `var __filename = ${JSON.stringify(rel)}, __dirname = ${JSON.stringify(path.posix.dirname(rel))};\n` +
-          fs.readFileSync(args.path, "utf8"),
+          // a #! line is only valid as the very first line
+          fs.readFileSync(args.path, "utf8").replace(/^#![^\n]*/, ""),
       };
     });
   },
@@ -247,8 +248,9 @@ async function main() {
     metafile: true,
     logLevel: "warning",
     alias: { "haxcms-nodejs": SRC },
+    // NODE_ENV stays unset, like `hax serve`: haxcms-nodejs treats
+    // production as a server deployment (and refuses local mode there).
     define: {
-      "process.env.NODE_ENV": '"production"',
       global: "globalThis",
     },
     inject: [path.join(SHIMS, "globals.mjs")],

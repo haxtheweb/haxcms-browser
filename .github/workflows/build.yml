@@ -2,9 +2,8 @@ name: build
 on:
   push:
     branches: [main]
-  # No branch filter: stacked PRs (base is another feature branch, not main)
-  # must run the tests too, otherwise they merge with no CI signal.
-  pull_request:
+  # pull requests run pr.yml, which can build against a matching
+  # haxcms-nodejs branch
   # Nightly against haxcms-nodejs main, so a change there that breaks the
   # browser runtime shows up even on days with no commits here.
   schedule:
@@ -27,7 +26,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Checkout haxcms-nodejs main
+      - name: Checkout haxcms-nodejs
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: haxtheweb/haxcms-nodejs
@@ -41,7 +40,7 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Install haxcms-nodejs main (no lifecycle scripts)
+      - name: Install haxcms-nodejs (no lifecycle scripts)
         # haxcms-nodejs pins its tree with yarn.lock (no package-lock.json)
         working-directory: .haxcms-nodejs
         run: yarn install --frozen-lockfile --ignore-scripts --non-interactive

@@ -1,0 +1,72 @@
+name: pr
+# Pull requests only (main, the nightly run and manual runs use build.yml).
+# A change here that needs a haxcms-nodejs change goes on a branch with the
+# same name in both repos; until that lands, this builds against it. No
+# dependency cache, so nothing built from another branch can write a cache.
+on:
+  # No branch filter: stacked PRs (base is another feature branch, not main)
+  # must run the tests too, otherwise they merge with no CI signal.
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build-and-test:
+    # Builds and tests against the latest haxcms-nodejs main (or the matching
+    # branch, see below), not the published package: the runtime must keep up
+    # with what is about to ship.
+    name: "node.js ${{ matrix.node-version }} against haxcms-nodejs (main or matching branch)"
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pick the haxcms-nodejs branch
+        id: nodejs-ref
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          ref=main
+          if [ -n "$HEAD_REF" ] && git ls-remote --exit-code --heads https://github.com/haxtheweb/haxcms-nodejs.git "refs/heads/$HEAD_REF" > /dev/null; then
+            ref="$HEAD_REF"
+          fi
+          echo "haxcms-nodejs ref: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Checkout haxcms-nodejs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: haxtheweb/haxcms-nodejs
+          ref: ${{ steps.nodejs-ref.outputs.ref }}
+          path: .haxcms-nodejs
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install
+        run: npm ci
+      - name: Install haxcms-nodejs (no lifecycle scripts)
+        # haxcms-nodejs pins its tree with yarn.lock (no package-lock.json)
+        working-directory: .haxcms-nodejs
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Format check
+        run: npm run format:check
+      - name: Build
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+        run: npm run build
+      - name: Test (headless Chrome)
+        env:
+          HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: npm test
+      - name: Security lint (blocking)
+        run: npm run lint:security
+      - name: Lint
+        run: npm run lint
