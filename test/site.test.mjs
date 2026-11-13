@@ -275,6 +275,67 @@ test("a site can be created, opened and saved to, all inside the browser", async
   // still showing the site, as someone working in two tabs would
 });
 
+test("clicking a site on the dashboard opens it", async () => {
+  // the dashboard's router handles the click: it only knows the site if it
+  // was told the path HAXcms is mounted under
+  const page = await browser.newPage();
+  await page.goto(new URL(mount, server.url).href, { waitUntil: "load" });
+  const dashboard = page.frames().find((f) => f !== page.mainFrame());
+  assert.ok(dashboard, "the dashboard is shown inside the wrapper");
+  await dashboard.waitForFunction(
+    () => {
+      const app = document.querySelector("app-hax");
+      const sites =
+        app && app.store && app.store.manifest && app.store.manifest.items;
+      return sites && sites.length > 0 && app.store.routes.length > 0;
+    },
+    { timeout: 60000 },
+  );
+  const state = await dashboard.evaluate((site) => {
+    const app = document.querySelector("app-hax");
+    const item = app.store.manifest.items.find((i) =>
+      i.slug.endsWith("/" + site + "/"),
+    );
+    const link = document.createElement("a");
+    link.href = item.slug;
+    link.textContent = site;
+    document.body.appendChild(link);
+    link.click();
+    return { basePath: app.basePath, slug: item.slug };
+  }, SITE);
+  assert.equal(state.basePath, mount, "the dashboard knows its mount path");
+  const opened = await page
+    .waitForFunction(
+      (site) => {
+        const inner = document.querySelector("iframe");
+        try {
+          const doc = inner.contentDocument;
+          return (
+            doc.location.pathname.endsWith("/_sites/" + site + "/") &&
+            !!doc.querySelector("haxcms-site-builder")
+          );
+        } catch (e) {
+          return false;
+        }
+      },
+      { timeout: 30000 },
+      SITE,
+    )
+    .then(
+      () => true,
+      () => false,
+    );
+  const where = await page.evaluate(() => {
+    const inner = document.querySelector("iframe");
+    const app = inner.contentDocument.querySelector("app-hax");
+    return (
+      inner.contentDocument.location.pathname + " mode=" + (app && app.appMode)
+    );
+  });
+  await page.close();
+  assert.equal(opened, true, "after the click: " + where);
+});
+
 test("only pages inside a session can change it", async () => {
   // the host page is on this origin but not inside the mount
   const fromOutside = await host.evaluate(async (m) => {

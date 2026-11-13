@@ -45,6 +45,7 @@ npm run lint:security
 - `src/site/`: the hosted demo. `index.html` + `shell.js` (host page: owns the Worker, signs in, keeps the session's cookies, answers relayed requests), `sw.js` (service worker: relays HAXcms requests to the host page, serves front-end build files from the static copy), `frame.js` (title and address sync)
 - `scripts/build-site.mjs`: assembles the static site (`npm run build:site`); `scripts/serve-site.mjs` serves it like GitHub Pages (`npm run serve`)
 - `.github/workflows/pages.yml`: publishes the demo to GitHub Pages from `main`
+- `scripts/start.mjs`: `npm start`, builds the site if missing and serves it
 - `scripts/build-hosted.mjs` + `vercel.json`: the same build in one step for hosts that build from the repository (`npm run build:hosted`)
 - `test/`: parity scenario and Node runner (`parity.test.mjs`), the hosted demo end to end (`site.test.mjs`) and at the root of a domain (`root.test.mjs`), and the storage layer against a stand-in folder (`storage.test.mjs`)
 

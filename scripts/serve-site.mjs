@@ -1,7 +1,6 @@
 /**
  * Serve the assembled site locally the way GitHub Pages does, under
- * /haxcms-browser/. Run `npm run build` and `npm run build:site -- --link`
- * first.
+ * /haxcms-browser/. `npm start` builds the site first if it is missing.
  *
  *   node scripts/serve-site.mjs [port]     (default 8080)
  */
@@ -15,7 +14,7 @@ import { startPagesServer } from "../test/helpers/pages-server.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const site = path.join(root, "site");
 if (!fs.existsSync(path.join(site, "index.html"))) {
-  throw new Error("site/ not found; run npm run build:site -- --link first");
+  throw new Error("site/ not found; run npm start, which builds it first");
 }
 const server = await startPagesServer(
   site,
