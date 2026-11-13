@@ -1,0 +1,80 @@
+{
+  "about": "Dependencies a maintainer reviewed and accepted although scripts/license-check.mjs flags their license. Each entry: {\"name\": \"<npm package>\", \"license\": \"<exact license string the check reports>\", \"reason\": \"<why it is acceptable>\"}. See haxtheweb/issues#3262.",
+  "reviewed": [
+    {
+      "name": "argparse",
+      "license": "PSF-2.0",
+      "reason": "PSF-2.0 is a permissive license compatible with Apache-2.0. Dev-only (via the tooling tree) and not in the Worker bundle (scripts/bundle-license-check.mjs)."
+    },
+    {
+      "name": "@img/sharp-libvips-darwin-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-darwin-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-arm",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-ppc64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-riscv64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-s390x",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linuxmusl-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-libvips-linuxmusl-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-wasm32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-win32-arm64",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-win32-ia32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    },
+    {
+      "name": "@img/sharp-win32-x64",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
+    }
+  ]
+}

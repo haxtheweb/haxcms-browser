@@ -1,0 +1,66 @@
+{
+  "name": "@haxtheweb/haxcms-browser",
+  "version": "0.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "HAXcms in the browser: haxcms-nodejs bundled to run in a Worker, saving to a folder on your computer or to browser storage",
+  "author": "HAXTheWeb core team",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.20.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haxtheweb/haxcms-browser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/haxtheweb/issues/issues"
+  },
+  "homepage": "https://hax.psu.edu/",
+  "scripts": {
+    "prepare": "husky install",
+    "build": "node scripts/build.mjs && node scripts/bundle-license-check.mjs",
+    "test": "node --test test/*.test.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:security": "eslint --config eslint.security.config.mjs \"src/**/*.cjs\" \"scripts/**/*.mjs\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "precheck": "node scripts/precheck.mjs",
+    "precheck:fix": "node scripts/precheck.mjs --fix",
+    "check:bundle-licenses": "node scripts/bundle-license-check.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "haxcms",
+    "haxtheweb",
+    "webcomponents",
+    "worker",
+    "offline"
+  ],
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@haxtheweb/haxcms-nodejs": "^26.8.1",
+    "@jspm/core": "2.1.0",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-n": "18.5.0",
+    "globals": "17.13.0",
+    "husky": "7.0.4",
+    "lint-staged": "^15.5.2",
+    "memfs": "4.80.1",
+    "prettier": "3.2.5",
+    "puppeteer-core": "^25.16.0",
+    "scrypt-js": "3.0.1"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs}": [
+      "eslint --fix --no-warn-ignored",
+      "prettier --write"
+    ]
+  }
+}
