@@ -78,7 +78,7 @@ test("the host page starts HAXcms and shows the dashboard, signed in", async () 
     "HAXcms is running in your browser",
   );
   assert.ok(mount, "the HAXcms frame is mounted");
-  assert.match(mount, /^\/haxcms-browser\/app\/[a-z0-9]{8}\/$/);
+  assert.match(mount, /^\/haxcms-browser\/app\/[0-9a-f]{16}\/$/);
   await frame.waitForFunction(() => document.title === "HAX: Home", {
     timeout: 30000,
   });

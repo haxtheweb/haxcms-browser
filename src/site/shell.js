@@ -23,9 +23,8 @@
   // one random id per host page, so two tabs never answer for each other
   const session = Array.from(
     globalThis.crypto.getRandomValues(new Uint8Array(8)),
-  )
-    .map((byte) => (byte % 36).toString(36))
-    .join("");
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
   const mount = scope + "app/" + session + "/";
 
   function setStatus(text, state) {
