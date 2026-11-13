@@ -20,6 +20,7 @@
   "homepage": "https://hax.psu.edu/",
   "scripts": {
     "prepare": "husky install",
+    "start": "node scripts/start.mjs",
     "build": "node scripts/build.mjs && node scripts/bundle-license-check.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "lint": "eslint .",

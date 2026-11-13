@@ -51,6 +51,15 @@ The Worker reports these on boot (`unavailable`), so the editor and the status p
 
 Content sanitizing is **not** on this list: jsdom and DOMPurify are bundled, so what you save is cleaned by the same code as on a server.
 
+## Run it locally
+
+```bash
+npm install
+npm start          # first run builds the site (several minutes), then serves it
+```
+
+Open http://127.0.0.1:8080/haxcms-browser/ in Chrome or Edge. `npm start -- --rebuild` builds again after pulling changes.
+
 ## Develop
 
 ```bash
@@ -71,7 +80,7 @@ npm run serve      # http://127.0.0.1:8080/haxcms-browser/
 
 `test/parity.test.mjs` sends the same HTTP requests to haxcms-nodejs on Node (real disk) and in the browser Worker (in-memory volume) and requires identical results: the dashboard and editor handshakes, site creation, outline saves, and the failures (a parent cycle, a page that is its own parent, a missing site token) that must be refused without touching `site.json`. It also checks that a password hash made in the browser verifies on a Node server.
 
-`test/site.test.mjs` runs the hosted demo itself, served under `/haxcms-browser/` like GitHub Pages: the dashboard opens signed in, a site is created, opened in its own tab and saved to (with a `<script>` in the content, which must come back stripped), sites survive a reload, a second tab does not save, Save to a folder writes the sites there and later saves follow, a folder that is not for HAX sites is refused, a save that cannot reach the folder is reported as failed, Download site returns a zip, a file uploaded in the editor is stored and served back from the page's own address, a site is saved as a template, the code editor loads, writes from outside a session are refused, and no HAXcms request reaches the web server.
+`test/site.test.mjs` runs the hosted demo itself, served under `/haxcms-browser/` like GitHub Pages: the dashboard opens signed in, a site is created, opened in its own tab and saved to (with a `<script>` in the content, which must come back stripped), sites survive a reload, a second tab does not save, Save to a folder writes the sites there and later saves follow, a folder that is not for HAX sites is refused, a save that cannot reach the folder is reported as failed, Download site returns a zip, a file uploaded in the editor is stored and served back from the page's own address, a site is saved as a template, clicking a site on the dashboard opens it, the code editor loads, writes from outside a session are refused, and no HAXcms request reaches the web server.
 
 `test/root.test.mjs` serves the same site at the root of a domain (Vercel, a custom domain) and checks it starts, makes a site and opens it.
 
