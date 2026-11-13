@@ -48,6 +48,8 @@ before(async () => {
     executablePath:
       process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome",
     args: ["--no-sandbox"],
+    // a busy CI runner can take a while to start Chrome
+    timeout: 120000,
     defaultViewport: { width: 1280, height: 800 },
   });
   host = await browser.newPage();
@@ -197,7 +199,80 @@ test("a site can be created, opened and saved to, all inside the browser", async
   assert.match(saved.stored, /Saved from the smoke test/);
   // the content went through haxcms-nodejs's sanitizer on the way in
   assert.doesNotMatch(saved.stored, /<script/);
-  await sitePage.close();
+
+  // Uploading a file: the editor posts to an absolute address the backend
+  // gives it ("Local files" in the app store). That address has to be this
+  // page's own origin, under the mount, or the browser cannot reach it.
+  const upload = await siteFrame.evaluate(async () => {
+    const s = globalThis.appSettings;
+    const query = new URLSearchParams(s.appStore.params).toString();
+    const store = await (
+      await fetch(s.appStore.url + "?" + query, { headers: s.appStore.headers })
+    ).json();
+    const apps = (store.data || store).apps || [];
+    const local = apps.find(
+      (app) => app.details && app.details.title === "Local files",
+    );
+    if (!local) {
+      return {
+        error: "no Local files app",
+        titles: apps.map((a) => a.details && a.details.title),
+      };
+    }
+    const connection = local.connection;
+    const add = connection.operations.add;
+    const address = connection.protocol + "://" + connection.url + add.endPoint;
+    const form = new FormData();
+    // a 1x1 transparent PNG
+    const png = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      ),
+      (c) => c.charCodeAt(0),
+    );
+    form.append(
+      "file-upload",
+      new Blob([png], { type: "image/png" }),
+      "dot.png",
+    );
+    const headers = Object.assign(
+      { authorization: "Bearer " + s.jwt },
+      connection.headers,
+    );
+    const response = await fetch(address, {
+      method: add.method || "POST",
+      headers,
+      body: form,
+    });
+    const text = await response.text();
+    const listed = await (await fetch("files/dot.png")).arrayBuffer();
+    return {
+      address,
+      origin: new URL(address).origin,
+      status: response.status,
+      text: text.slice(0, 300),
+      storedBytes: listed.byteLength,
+      sent: png.length,
+    };
+  });
+  assert.equal(upload.error, undefined, JSON.stringify(upload));
+  assert.equal(upload.origin, new URL(server.url).origin, upload.address);
+  assert.ok(
+    upload.address.includes(mount + "_sites/" + SITE + "/"),
+    upload.address,
+  );
+  assert.equal(
+    upload.status,
+    200,
+    upload.text + "\n" + runtimeErrors.join("\n"),
+  );
+  assert.equal(
+    upload.storedBytes,
+    upload.sent,
+    "the uploaded file is served back whole",
+  );
+  // left open on purpose: the host page is reloaded later with this tab
+  // still showing the site, as someone working in two tabs would
 });
 
 test("only pages inside a session can change it", async () => {
@@ -230,17 +305,41 @@ test("a session that is not open says so instead of failing oddly", async () => 
 // ---- where sites are saved ---------------------------------------------
 
 async function waitReady(page) {
-  await page.waitForFunction(
-    () =>
-      ["ready", "error"].includes(document.getElementById("dot").dataset.state),
-    { timeout: 90000 },
-  );
-  const frame = page.frames().find((f) => f.url().includes("/app/"));
-  await frame.waitForFunction(
-    () => globalThis.appSettings && globalThis.appSettings.jwt,
-    { timeout: 30000 },
-  );
-  return frame;
+  // waits poll on animation frames, which a background tab does not get
+  await page.bringToFront();
+  try {
+    await page.waitForFunction(
+      () =>
+        ["ready", "error"].includes(
+          document.getElementById("dot").dataset.state,
+        ),
+      { timeout: 60000 },
+    );
+    const frame = page.frames().find((f) => f.url().includes("/app/"));
+    await frame.waitForFunction(
+      () => globalThis.appSettings && globalThis.appSettings.jwt,
+      { timeout: 30000 },
+    );
+    return frame;
+  } catch (error) {
+    // say what the page was showing, not just that the wait ran out
+    const seen = await page
+      .evaluate(() => ({
+        status: document.getElementById("status").textContent,
+        note: document.getElementById("note").textContent,
+        message: document.getElementById("message").textContent.slice(0, 400),
+        frame: document.getElementById("app").getAttribute("src"),
+      }))
+      .catch((e) => ({ unreadable: String(e) }));
+    const frames = page.frames().map((f) => f.url());
+    throw new Error(
+      error.message +
+        "\n" +
+        JSON.stringify({ seen, frames }, null, 1) +
+        "\n" +
+        runtimeErrors.slice(-5).join("\n"),
+    );
+  }
 }
 
 // the site names the dashboard would list
@@ -328,6 +427,8 @@ test("a second tab does not save over the first", async () => {
 // the same way the picker would: a directory handle. These come from the
 // browser's private file system, which is the same kind of object.
 async function pickFolder(page, name, files) {
+  // someone clicking a button in a tab has that tab in front
+  await page.bringToFront();
   await page.evaluate(
     async (name, files) => {
       const root = await navigator.storage.getDirectory();
@@ -478,6 +579,59 @@ test("Stop using the folder goes back to the browser's storage", async () => {
   assert.deepEqual(await listSites(frame), [SITE]);
 });
 
+test("a site can be saved as a template (skeleton) and its skeleton downloaded", async () => {
+  const result = await frame.evaluate(async (site) => {
+    const s = globalThis.appSettings;
+    const headers = {
+      "content-type": "application/json",
+      authorization: "Bearer " + s.jwt,
+      "x-haxcms-user-token": s.userToken,
+    };
+    // answer, or say that nothing came back
+    const call = async (path, method) => {
+      const stop = new AbortController();
+      const timer = setTimeout(() => stop.abort(), 30000);
+      try {
+        const response = await fetch(path, {
+          method,
+          headers,
+          body:
+            method === "GET"
+              ? undefined
+              : JSON.stringify({ site: { name: site } }),
+          signal: stop.signal,
+        });
+        return {
+          status: response.status,
+          text: (await response.text()).slice(0, 300),
+        };
+      } catch (error) {
+        return { status: 0, text: "no answer: " + String(error) };
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    return {
+      saved: await call(
+        "system/api/v1/sites/" + site + "/save-as-template",
+        "POST",
+      ),
+      skeleton: await call(
+        "system/api/v1/sites/" + site + "/download-skeleton",
+        "POST",
+      ),
+      listed: await call("system/api/v1/skeletons", "GET"),
+    };
+  }, SITE);
+  const detail =
+    JSON.stringify(result, null, 1) + "\n" + runtimeErrors.slice(-3).join("\n");
+  assert.equal(result.saved.status, 200, detail);
+  assert.equal(result.skeleton.status, 200, detail);
+  assert.equal(result.listed.status, 200, detail);
+  // the dashboard's template list now offers it
+  assert.match(result.listed.text, new RegExp(SITE), detail);
+});
+
 test("HAXcms's own Download site gives a zip of the site", async () => {
   const result = await frame.evaluate(async (site) => {
     const s = globalThis.appSettings;
@@ -513,6 +667,58 @@ test("HAXcms's own Download site gives a zip of the site", async () => {
   assert.equal(result.name, SITE + ".zip");
   assert.equal(result.signature, "PK");
   assert.ok(result.bytes > 1000, "zip has content: " + result.bytes);
+});
+
+test("the code editor finds its files (it loads them from inside a frame)", async () => {
+  const page = await browser.newPage();
+  const missing = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      missing.push(response.status() + " " + response.url());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    missing.push("failed " + request.url());
+  });
+  await page.goto(new URL(mount + "_sites/" + SITE + "/", server.url).href, {
+    waitUntil: "load",
+  });
+  const siteFrame = page.frames().find((f) => f !== page.mainFrame());
+  await siteFrame.waitForFunction(
+    () => document.querySelector("haxcms-site-builder"),
+    { timeout: 30000 },
+  );
+  const editor = await siteFrame.evaluate(async () => {
+    await import(
+      new URL(
+        "build/es6/node_modules/@haxtheweb/code-editor/code-editor.js",
+        document.baseURI,
+      ).href
+    );
+    const element = document.createElement("code-editor");
+    document.body.appendChild(element);
+    const started = Date.now();
+    // monaco is there once its frame has built an editor
+    while (Date.now() - started < 30000) {
+      const inner =
+        element.shadowRoot &&
+        element.shadowRoot.querySelector("monaco-element");
+      const iframe =
+        inner && inner.shadowRoot && inner.shadowRoot.querySelector("iframe");
+      if (iframe && iframe.contentWindow && iframe.contentWindow.monaco) {
+        return { ready: true, libPath: element.libPath };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return { ready: false, libPath: element.libPath, base: document.baseURI };
+  });
+  await page.close();
+  const detail = JSON.stringify(editor) + "\n" + missing.join("\n");
+  assert.equal(editor.ready, true, detail);
+  assert.deepEqual(
+    missing.filter((entry) => /monaco/.test(entry)),
+    [],
+  );
 });
 
 test("nothing HAXcms asks for reaches the web server", () => {

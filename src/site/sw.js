@@ -34,6 +34,27 @@ const SCOPE = new URL(self.registration.scope).pathname;
 const APP = SCOPE + "app/";
 const STATIC = SCOPE + "public/";
 const HOST_PATHS = [SCOPE, SCOPE + "index.html"];
+// what the host page itself is made of; never relayed, even when a HAXcms
+// page asks for one (the wrapper around a page in its own tab uses two)
+const HOST_FILES = [
+  "",
+  "index.html",
+  "shell.js",
+  "shell.css",
+  "frame.js",
+  "sw.js",
+  "haxcms-worker.js",
+  "haxcms-snapshot.json",
+  "version.json",
+];
+
+function isHostFile(pathname) {
+  if (pathname.indexOf(SCOPE) !== 0) {
+    return false;
+  }
+  const rest = pathname.slice(SCOPE.length);
+  return HOST_FILES.indexOf(rest) !== -1 || rest.indexOf("public/") === 0;
+}
 // a host page that owns the session answers "got it" at once; the real
 // response can take as long as the work does (creating a site, an import)
 const ACK_TIMEOUT_MS = 4000;
@@ -118,13 +139,29 @@ function page(status, pageTitle, pageMessage) {
   });
 }
 
+// The code editor (monaco) runs inside a blank frame it creates, and Chrome
+// does not route a blank frame's requests through a service worker. So it is
+// told where its files really are on the web server, not under the mount:
+// the one place its script works out its own address is swapped for that.
+// If the script ever changes shape this does nothing, and the test for the
+// code editor fails.
+const CODE_EDITOR = "@haxtheweb/code-editor/code-editor.js";
+const CODE_EDITOR_OWN_ADDRESS =
+  'new URL("./code-editor.js",import.meta.url).href';
+
 // Fetch a file from the static front-end folder and hand it back as if it
 // came from the requested address. The copy matters: a response that kept
 // its real URL (<scope>public/...) would make the browser resolve the
 // module's own imports there, and load modules twice under two addresses.
 async function staticFile(path) {
   const response = await fetch(STATIC + path);
-  return new Response(response.body, {
+  let body = response.body;
+  if (response.ok && path.slice(-CODE_EDITOR.length) === CODE_EDITOR) {
+    body = (await response.text())
+      .split(CODE_EDITOR_OWN_ADDRESS)
+      .join(JSON.stringify(self.location.origin + STATIC + path));
+  }
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
@@ -141,6 +178,9 @@ function framePage(url) {
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     "<title>HAXcms in your browser</title>" +
+    '<link rel="icon" href="' +
+    SCOPE +
+    'public/assets/favicon.ico">' +
     '<link rel="stylesheet" href="' +
     SCOPE +
     'shell.css"></head><body>' +
@@ -263,8 +303,9 @@ async function handle(event, url) {
       : null;
     if (clientMount) {
       fromSessionPage = true;
-      if (!mount && url.pathname.indexOf(SCOPE) !== 0) {
-        // an absolute link from a HAXcms page ("/system/api/...")
+      if (!mount) {
+        // a link from a HAXcms page that starts at the web root
+        // ("/system/api/..."), wherever this site itself is served from
         mount = { session: clientMount.session, path: url.pathname };
       } else if (mount && mount.session !== clientMount.session) {
         return page(
@@ -320,7 +361,6 @@ async function handle(event, url) {
         url: mount.path + url.search,
         headers,
         body,
-        pageOrigin: self.location.origin,
       },
     },
     body ? [body] : [],
@@ -356,9 +396,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
-  // the host page's own files never need the relay
-  const inScope = url.pathname.indexOf(SCOPE) === 0;
-  if (inScope && url.pathname.indexOf(APP) !== 0) {
+  if (isHostFile(url.pathname)) {
     return;
   }
   event.respondWith(

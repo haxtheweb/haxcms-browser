@@ -5,7 +5,7 @@
  * { id, ok, result } or { id, ok: false, error } out. Messages are handled
  * one at a time, in order.
  *
- *   boot        { snapshot, root, basePath, storage }
+ *   boot        { snapshot, root, basePath, origin, storage }
  *                                   load the data snapshot into the volume and
  *                                   start haxcms-nodejs (the full Express app,
  *                                   embedded) with root as its HAXcms root.
@@ -16,7 +16,7 @@
  *                                   the sites folder is loaded from and
  *                                   saved to (see storage.cjs); without it
  *                                   sites only live in memory
- *   request     { method, url, headers, body, pageOrigin, binary }
+ *   request     { method, url, headers, body, binary }
  *                                   send one HTTP request through the app;
  *                                   resolves { status, statusText, headers,
  *                                   body }. Bodies are base64 strings, or
@@ -49,20 +49,27 @@
  * BROWSER_STORAGE_WRITE_FAILED: a save never reports success unless it
  * reached the folder. The unsaved files are retried on the next write.
  *
- * Requests are addressed to the internal origin http://localhost: the Host
- * header is always "localhost", and Origin / Referer are rewritten from the
- * page's origin to it, so haxcms-nodejs's same-origin checks see a local
- * request. Anything from another origin keeps
- * its value and is refused by those checks as usual.
+ * Requests carry the address of the page HAXcms is shown on (boot's
+ * `origin`, e.g. https://haxtheweb.github.io): the Host header, and whether
+ * the connection counts as https, come from it, and Origin / Referer are
+ * passed through as the browser sent them. haxcms-nodejs builds some
+ * absolute URLs from the request's host (the file upload endpoint, for one),
+ * so they have to be addresses the page can actually reach. Without an
+ * origin (tests that talk to the Worker directly) it is http://localhost.
  */
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { DirectoryStorage } = require("./storage.cjs");
 
-const INTERNAL_ORIGIN = "http://localhost";
+const DEFAULT_ORIGIN = "http://localhost";
 
-const state = { HAXCMS: null, app: null, storage: null };
+const state = {
+  HAXCMS: null,
+  app: null,
+  storage: null,
+  origin: new URL(DEFAULT_ORIGIN),
+};
 
 const READ_ONLY_METHODS = ["GET", "HEAD", "OPTIONS"];
 
@@ -83,9 +90,12 @@ function requireBooted() {
 }
 
 const handlers = {
-  async boot({ snapshot, root, basePath, storage }) {
+  async boot({ snapshot, root, basePath, origin, storage }) {
     if (state.HAXCMS) {
       throw new Error("already booted");
+    }
+    if (origin) {
+      state.origin = new URL(origin);
     }
     const start = performance.now();
     const volume = fs.__volume;
@@ -127,7 +137,7 @@ const handlers = {
       unavailable: Array.from(globalThis.__haxcmsUnavailable || []).sort(),
     };
   },
-  async request({ method, url, headers, body, pageOrigin, binary }) {
+  async request({ method, url, headers, body, binary }) {
     requireBooted();
     const target = String(url || "/");
     if (target.charAt(0) !== "/") {
@@ -138,16 +148,7 @@ const handlers = {
     for (const name of Object.keys(incoming)) {
       out[name.toLowerCase()] = String(incoming[name]);
     }
-    out.host = "localhost";
-    if (pageOrigin) {
-      // Only the origin changes. Paths keep the mount: HAXcms was told its
-      // basePath on boot and expects to see it in a Referer.
-      for (const name of ["origin", "referer"]) {
-        if (out[name] && out[name].indexOf(pageOrigin) === 0) {
-          out[name] = INTERNAL_ORIGIN + out[name].slice(pageOrigin.length);
-        }
-      }
-    }
+    out.host = state.origin.host;
     let payload = null;
     if (typeof body === "string") {
       payload = Buffer.from(body, "base64");
@@ -162,6 +163,7 @@ const handlers = {
       url: target,
       headers: out,
       body: payload,
+      encrypted: state.origin.protocol === "https:",
     });
     let bytes = response.body;
     let saveFailed = null;
@@ -246,7 +248,7 @@ const handlers = {
       url: "/system/api/v1/session/login",
       headers: {
         "content-type": "application/json",
-        origin: INTERNAL_ORIGIN,
+        origin: state.origin.origin,
       },
       body: Buffer.from(JSON.stringify(credentials)).toString("base64"),
     });
@@ -259,6 +261,9 @@ const handlers = {
     return requireBooted().hashPassword(password);
   },
 };
+
+// message type -> handler; only these names can be called
+const handlerFor = new Map(Object.entries(handlers));
 
 // One message at a time. A message that never settles would hold up every
 // later one, so two things end it early: an error nothing caught while it
@@ -285,9 +290,15 @@ function run(message) {
       () => reject(new Error(message.type + " took too long and was stopped")),
       MESSAGE_TIMEOUT_MS,
     );
+    const handler = handlerFor.get(message.type);
+    if (typeof handler !== "function") {
+      clearTimeout(timer);
+      reject(new Error("unknown message type " + message.type));
+      return;
+    }
     failCurrent = reject;
     Promise.resolve()
-      .then(() => handlers[message.type](message))
+      .then(() => handler(message))
       .then(resolve, reject)
       .finally(() => clearTimeout(timer));
   }).finally(() => {
@@ -300,9 +311,6 @@ globalThis.onmessage = (event) => {
   const message = event.data || {};
   queue = queue.then(async () => {
     try {
-      if (!Object.prototype.hasOwnProperty.call(handlers, message.type)) {
-        throw new Error("unknown message type " + message.type);
-      }
       const result = await run(message);
       const transfer =
         result && result.body instanceof ArrayBuffer ? [result.body] : [];

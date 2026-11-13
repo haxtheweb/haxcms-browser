@@ -71,6 +71,8 @@ before(async () => {
     executablePath:
       process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome",
     args: ["--no-sandbox"],
+    // a busy CI runner can take a while to start Chrome
+    timeout: 120000,
   });
   page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
@@ -114,7 +116,7 @@ test("boots haxcms-nodejs in a Worker and reports what is unavailable", async ()
   assert.equal(booted.mode, "multisite");
   assert.ok(Array.isArray(booted.unavailable));
   // the runtime must say which server-only pieces it replaced
-  for (const name of ["child_process", "sharp"]) {
+  for (const name of ["child_process", "git-interface"]) {
     assert.ok(booted.unavailable.includes(name), name + " should be listed");
   }
 });

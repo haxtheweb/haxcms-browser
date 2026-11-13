@@ -92,7 +92,6 @@
   // what the runtime could not load, as the features people know
   const FEATURES = {
     "git-interface": "revisions (git history)",
-    sharp: "image resizing",
     "puppeteer-core": "PDF export",
     "html-to-docx": "Word export",
     "epub-gen-memory": "EPUB export",
@@ -549,6 +548,7 @@
       snapshot,
       root: "/haxcms",
       basePath: mount,
+      origin: globalThis.location.origin,
       storage: storage.handle ? { handle: storage.handle } : null,
     });
     // one local user, so sign in for them: HAXcms then opens signed in

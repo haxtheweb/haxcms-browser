@@ -60,6 +60,9 @@ const builtins = {
   async_hooks: path.join(SHIMS, "async_hooks.cjs"),
   crypto: path.join(SHIMS, "crypto.cjs"),
   http: path.join(SHIMS, "http.cjs"),
+  // not a Node built-in, but replaced the same way: the browser's own image
+  // decoder and canvas stand in for the native library
+  sharp: path.join(SHIMS, "sharp.cjs"),
   tty: path.join(SHIMS, "tty.cjs"),
   net: path.join(SHIMS, "net.cjs"),
   path: JSPM + "path.js",
@@ -102,7 +105,6 @@ const unavailablePackages = [
   "mammoth",
   "open",
   "puppeteer-core",
-  "sharp",
   "text-readability",
   "unpdf",
   "ws",
