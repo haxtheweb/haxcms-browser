@@ -14,7 +14,11 @@
  *                                   the links HAXcms generates. storage is
  *                                   { handle }: a FileSystemDirectoryHandle
  *                                   the sites folder is loaded from and
- *                                   saved to (see storage.cjs); without it
+ *                                   saved to (see storage.cjs), or
+ *                                   { remote: { provider, webdav } }: cloud
+ *                                   storage (remote.cjs), signed in with
+ *                                   tokens the page sends on request (see
+ *                                   "token-request" below); without either
  *                                   sites only live in memory
  *   request     { method, url, headers, body, binary }
  *                                   send one HTTP request through the app;
@@ -22,9 +26,9 @@
  *                                   body }. Bodies are base64 strings, or
  *                                   ArrayBuffers (in: when given one, out:
  *                                   when binary is true)
- *   useStorage  { handle }          start saving the sites folder to this
- *                                   (empty) handle; everything in memory is
- *                                   written to it
+ *   useStorage  { handle | remote } start saving the sites folder to this
+ *                                   (empty) folder or cloud storage;
+ *                                   everything in memory is written to it
  *   refreshStorage {}               pick up files changed in the folder by
  *                                   another program
  *   signIn      {}                  sign in as the local user through the real
@@ -36,6 +40,12 @@
  *   hashPassword { password }       HAXCMS.hashPassword (portability check)
  *   listSites   {}                  the sites that can be published:
  *                                   [{ name, title, domain }] (publish.cjs)
+ *   inspectRemote { remote }        how many entries cloud storage's HAXcms
+ *                                   folder holds: { entries }
+ *   siteFiles   { name }            the same files packSite packs, one by
+ *                                   one, for hosts that take files:
+ *                                   { files: [{ path, body }] } (bodies
+ *                                   are ArrayBuffers, transferred)
  *   packSite    { name }            one site packed for a static host, the
  *                                   same files the HAX CLI publishes:
  *                                   resolves { files, bytes, body } with
@@ -71,6 +81,7 @@ const path = require("path");
 const http = require("http");
 const { DirectoryStorage } = require("./storage.cjs");
 const publish = require("./publish.cjs");
+const { createRemoteRoot } = require("./remote.cjs");
 
 const DEFAULT_ORIGIN = "http://localhost";
 
@@ -92,11 +103,72 @@ function storageFor(handle) {
   return new DirectoryStorage({ fs, path, handle, root: sitesFolder() });
 }
 
+// Cloud storage signs in with the page's tokens. The Worker asks the page
+// for a current one (and for a renewed one when the service says it has run
+// out); the answer comes back as a "token-reply" message, outside the
+// one-message-at-a-time queue, so a save waiting for a token can't block it.
+let nextTokenRequest = 0;
+// request id -> the function that settles it (an object with no prototype,
+// so only ids set here are found)
+const tokenWaiters = Object.create(null);
+function requestToken(provider, force) {
+  return new Promise((resolve) => {
+    const requestId = ++nextTokenRequest;
+    const timer = setTimeout(() => {
+      delete tokenWaiters[requestId];
+      resolve(null);
+    }, 60 * 1000);
+    tokenWaiters[requestId] = (token) => {
+      clearTimeout(timer);
+      resolve(typeof token === "string" && token ? token : null);
+    };
+    globalThis.postMessage({
+      type: "token-request",
+      requestId,
+      provider,
+      force: !!force,
+    });
+  });
+}
+
+// the directory handle for a storage choice: a handle the page passed (a
+// folder or the browser's own storage), or cloud storage built here
+async function handleFor(choice) {
+  if (choice && choice.handle) {
+    return choice.handle;
+  }
+  if (choice && choice.remote) {
+    const remote = choice.remote;
+    return createRemoteRoot({
+      provider: remote.provider,
+      webdav: remote.webdav,
+      getToken: (force) => requestToken(remote.provider, force),
+    });
+  }
+  return null;
+}
+
 function requireBooted() {
   if (!state.HAXCMS) {
     throw new Error("boot must be called first");
   }
   return state.HAXCMS;
+}
+
+// llms-full.txt as haxcms-nodejs answers it, so a static host has it too;
+// anything but a 200 (a private site answers 404) adds nothing
+async function llmsFullExtra(HAXCMS, name) {
+  const extras = [];
+  const llms = await handlers.request({
+    method: "GET",
+    url: "/" + HAXCMS.sitesDirectory + "/" + name + "/llms-full.txt",
+    headers: { accept: "text/markdown" },
+    binary: true,
+  });
+  if (llms && llms.status === 200 && llms.body) {
+    extras.push({ path: "llms-full.txt", bytes: new Uint8Array(llms.body) });
+  }
+  return extras;
 }
 
 const handlers = {
@@ -136,8 +208,9 @@ const handlers = {
     state.app = appModule.app;
     state.HAXCMS = HAXCMS;
     let loaded = null;
-    if (storage && storage.handle) {
-      state.storage = storageFor(storage.handle);
+    const handle = await handleFor(storage);
+    if (handle) {
+      state.storage = storageFor(handle);
       loaded = await state.storage.load();
     }
     return {
@@ -217,8 +290,12 @@ const handlers = {
         : bytes.toString("base64"),
     };
   },
-  async useStorage({ handle }) {
+  async useStorage(choice) {
     requireBooted();
+    const handle = await handleFor(choice);
+    if (!handle) {
+      throw new Error("no storage to use");
+    }
     const storage = storageFor(handle);
     // nothing is known to be on the new handle, so this writes everything
     const result = await storage.flush();
@@ -274,6 +351,44 @@ const handlers = {
     requireBooted();
     return publish.listSites(fs, path, sitesFolder());
   },
+  async inspectRemote({ remote }) {
+    requireBooted();
+    const handle = await handleFor({ remote });
+    let entries = 0;
+    for await (const entry of handle.entries()) {
+      if (entry) {
+        entries++;
+      }
+    }
+    return { entries };
+  },
+  async siteFiles({ name }) {
+    const HAXCMS = requireBooted();
+    if (!publish.validSiteName(name)) {
+      throw new Error("not a site name: " + String(name));
+    }
+    const siteDir = path.join(sitesFolder(), name);
+    if (!fs.existsSync(siteDir) || !fs.lstatSync(siteDir).isDirectory()) {
+      throw new Error("no site named " + name);
+    }
+    const extras = await llmsFullExtra(HAXCMS, name);
+    const files = publish.publishFiles(fs, path, siteDir, extras);
+    return {
+      files: files.map((file) => {
+        const bytes =
+          file.bytes instanceof Uint8Array
+            ? file.bytes
+            : new Uint8Array(file.bytes);
+        return {
+          path: file.path,
+          body: bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ),
+        };
+      }),
+    };
+  },
   async packSite({ name }) {
     const HAXCMS = requireBooted();
     if (!publish.validSiteName(name)) {
@@ -283,21 +398,7 @@ const handlers = {
     if (!fs.existsSync(siteDir) || !fs.lstatSync(siteDir).isDirectory()) {
       throw new Error("no site named " + name);
     }
-    // llms-full.txt as haxcms-nodejs answers it, so a static host has it
-    // too; anything but a 200 (a private site answers 404) adds nothing
-    const extras = [];
-    const llms = await handlers.request({
-      method: "GET",
-      url: "/" + HAXCMS.sitesDirectory + "/" + name + "/llms-full.txt",
-      headers: { accept: "text/markdown" },
-      binary: true,
-    });
-    if (llms && llms.status === 200 && llms.body) {
-      extras.push({
-        path: "llms-full.txt",
-        bytes: new Uint8Array(llms.body),
-      });
-    }
+    const extras = await llmsFullExtra(HAXCMS, name);
     return publish.packSite(fs, path, siteDir, extras);
   },
 };
@@ -324,6 +425,10 @@ function handle(message) {
       return handlers.listSites(message);
     case "packSite":
       return handlers.packSite(message);
+    case "siteFiles":
+      return handlers.siteFiles(message);
+    case "inspectRemote":
+      return handlers.inspectRemote(message);
     default:
       throw new Error("unknown message type " + String(message.type));
   }
@@ -367,11 +472,34 @@ function run(message) {
 let queue = Promise.resolve();
 globalThis.onmessage = (event) => {
   const message = event.data || {};
+  if (message.type === "token-reply") {
+    // answered at once, outside the queue (see requestToken); only an id
+    // this Worker handed out finds a waiting request
+    const requestId = Number(message.requestId);
+    if (
+      Number.isInteger(requestId) &&
+      Object.prototype.hasOwnProperty.call(tokenWaiters, requestId)
+    ) {
+      const waiting = tokenWaiters[requestId];
+      delete tokenWaiters[requestId];
+      if (typeof waiting === "function") {
+        waiting(message.token);
+      }
+    }
+    return;
+  }
   queue = queue.then(async () => {
     try {
       const result = await run(message);
       const transfer =
         result && result.body instanceof ArrayBuffer ? [result.body] : [];
+      if (result && Array.isArray(result.files)) {
+        for (const file of result.files) {
+          if (file && file.body instanceof ArrayBuffer) {
+            transfer.push(file.body);
+          }
+        }
+      }
       globalThis.postMessage({ id: message.id, ok: true, result }, transfer);
     } catch (e) {
       console.error("[haxcms-browser] " + String((e && e.stack) || e));

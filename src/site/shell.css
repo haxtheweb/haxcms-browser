@@ -550,3 +550,59 @@ body {
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }
+/* Sign in and Save to the cloud: provider choices, in the Publish dialog's colors. */
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.provider-list:empty {
+  display: none;
+}
+.publish button.provider {
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+}
+.publish-account-host,
+.publish-surge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cloud-webdav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--details-line);
+  border-radius: 6px;
+}
+.cloud-webdav[open] {
+  padding-bottom: 12px;
+}
+.cloud-webdav summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+.cloud-webdav label {
+  display: block;
+  margin-top: 6px;
+}
+.cloud-webdav input {
+  margin-top: 4px;
+}
+.cloud-webdav button {
+  margin-top: 10px;
+  align-self: flex-start;
+}
+.publish input[type="url"] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--details-line);
+  border-radius: 4px;
+  background: var(--details-tile);
+  color: var(--bar-fg);
+  font: inherit;
+}

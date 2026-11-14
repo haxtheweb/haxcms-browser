@@ -1,19 +1,24 @@
-// Send the broker's requests for the Surge API to a local stand-in instead.
-// The broker always calls https://surge.surge.sh (a fixed host); tests
-// redirect that address and leave every other request alone.
-export function redirectSurge(standIn) {
+// Send the broker's requests for outside services to local stand-ins.
+// The broker only ever calls fixed https addresses; tests redirect them and
+// leave every other request alone.
+
+// { "https://surge.surge.sh": "http://127.0.0.1:1234", ... }
+export function redirectHosts(map) {
   const realFetch = globalThis.fetch;
   globalThis.fetch = (input, init) => {
     const url = String(input && input.url ? input.url : input);
-    if (url.startsWith("https://surge.surge.sh/")) {
-      return realFetch(
-        standIn + url.slice("https://surge.surge.sh".length),
-        init,
-      );
+    for (const from of Object.keys(map)) {
+      if (url === from || url.startsWith(from + "/")) {
+        return realFetch(map[from] + url.slice(from.length), init);
+      }
     }
     return realFetch(input, init);
   };
   return () => {
     globalThis.fetch = realFetch;
   };
+}
+
+export function redirectSurge(standIn) {
+  return redirectHosts({ "https://surge.surge.sh": standIn });
 }

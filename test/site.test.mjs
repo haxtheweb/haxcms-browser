@@ -972,6 +972,163 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
   }
 });
 
+// ---- signing in (haxtheweb/issues#3341) ------------------------------------
+
+test("Sign in runs the provider in a popup and fills in new sites' author", async () => {
+  // a stand-in broker: one provider, whose sign-in page answers at once
+  const tokenRequests = [];
+  server.setApi((req, res) => {
+    const url = new URL(req.url, server.url);
+    if (url.pathname === "/api/oauth/providers") {
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          providers: [
+            {
+              id: "github",
+              label: "GitHub",
+              uses: ["identity", "publish"],
+              clientId: "test-client",
+              authorizeUrl: new URL("/api/test-authorize", server.url).href,
+              scopes: [],
+              pkce: true,
+              params: {},
+              callback: "page",
+              installUrl: "",
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (url.pathname === "/api/test-authorize") {
+      // the provider: send the person straight back with a code
+      const back = new URL(url.searchParams.get("redirect_uri"));
+      back.searchParams.set("code", "test-code");
+      back.searchParams.set("state", url.searchParams.get("state"));
+      res.statusCode = 302;
+      res.setHeader("location", back.href);
+      res.end();
+      return;
+    }
+    if (url.pathname === "/api/oauth/token") {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        tokenRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ access_token: "gho_test", expires_in: 3600 }));
+      });
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+  try {
+    await host.bringToFront();
+    // the provider's API, answered in the page
+    await host.evaluate(() => {
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (input, init) => {
+        if (String(input) === "https://api.github.com/user") {
+          return Promise.resolve(
+            Response.json({
+              login: "ada",
+              name: "Ada Lovelace",
+              email: "ada@example.com",
+              avatar_url: "https://avatars.example/ada.png",
+            }),
+          );
+        }
+        return realFetch(input, init);
+      };
+    });
+    // Sign in shows once HAXcms is running and a provider is set up
+    await host.evaluate(() => {
+      // the bar decided before this test's broker existed: ask again
+      document.getElementById("signin-button").hidden = false;
+    });
+    await host.click("#signin-button");
+    await host.waitForFunction(
+      () =>
+        document.getElementById("signin").open &&
+        document.querySelector("#signin-providers button"),
+      { timeout: 15000 },
+    );
+    assert.equal(
+      await host.$eval("#signin-providers button", (el) => el.textContent),
+      "Continue with GitHub",
+    );
+    await host.click("#signin-providers button");
+    await host.waitForFunction(
+      () =>
+        ["ready", "error"].includes(
+          document.getElementById("signin-status").dataset.state,
+        ),
+      { timeout: 30000 },
+    );
+    const status = await host.$eval("#signin-status", (el) => ({
+      state: el.dataset.state,
+      text: el.textContent,
+    }));
+    assert.equal(status.state, "ready", status.text);
+    assert.match(
+      await host.$eval("#signin-current-text", (el) => el.textContent),
+      /Ada Lovelace \(ada@example\.com\) with GitHub/,
+    );
+    assert.equal(
+      await host.$eval("#signin-button", (el) => el.textContent.trim()),
+      "Ada Lovelace",
+    );
+    // the code went to the broker with the PKCE verifier and this page's
+    // own callback address
+    assert.equal(tokenRequests.length, 1);
+    assert.equal(tokenRequests[0].code, "test-code");
+    assert.match(tokenRequests[0].code_verifier, /^[\w-]{43,128}$/);
+    assert.match(tokenRequests[0].redirect_uri, /\/oauth\/callback\.html$/);
+    // the token stays in this tab: sessionStorage, never localStorage
+    const kept = await host.evaluate(() => ({
+      session: JSON.stringify(Object.assign({}, globalThis.sessionStorage)),
+      local: JSON.stringify(Object.assign({}, globalThis.localStorage)),
+    }));
+    assert.match(kept.session, /gho_test/);
+    assert.doesNotMatch(kept.local, /gho_test/);
+    await host.click("#signin-close");
+
+    // a site made now has the signed-in person as its author
+    const created = await frame.evaluate(async (base) => {
+      const s = globalThis.appSettings;
+      const response = await fetch(base + "system/api/v1/sites", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + s.jwt,
+          "x-haxcms-user-token": s.userToken,
+        },
+        body: JSON.stringify({
+          site: { name: "authored-site" },
+          build: { type: "own", structure: "course", items: null, files: null },
+          theme: { name: "clean-one", variables: {} },
+        }),
+      });
+      const manifest = await (
+        await fetch(base + "_sites/authored-site/site.json", {
+          cache: "no-store",
+        })
+      ).json();
+      return { status: response.status, author: manifest.metadata.author };
+    }, mount);
+    assert.equal(created.status, 200);
+    assert.deepEqual(created.author, {
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      image: "https://avatars.example/ada.png",
+    });
+  } finally {
+    server.setApi(null);
+  }
+});
+
 test("the code editor finds its files (it loads them from inside a frame)", async () => {
   const page = await browser.newPage();
   const missing = [];

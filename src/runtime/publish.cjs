@@ -225,11 +225,12 @@ async function gzip(bytes) {
 }
 
 /**
- * Pack one site folder for a static host: { files, bytes, body } where body
- * is the gzipped tarball as an ArrayBuffer. extras ([{ path, bytes }]) are
- * generated files to add, each only where the site has no file of that name.
+ * The files a static host gets for one site, [{ path, bytes }] sorted: the
+ * site's files (collectSiteFiles) plus extras ([{ path, bytes }],
+ * generated files), each extra only where the site has no file of that
+ * name.
  */
-async function packSite(fs, path, siteDir, extras) {
+function publishFiles(fs, path, siteDir, extras) {
   const files = collectSiteFiles(fs, path, siteDir);
   for (const extra of extras || []) {
     if (!files.some((file) => file.path === extra.path)) {
@@ -237,6 +238,15 @@ async function packSite(fs, path, siteDir, extras) {
     }
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return files;
+}
+
+/**
+ * Pack one site folder for a static host: { files, bytes, body } where body
+ * is the gzipped tarball as an ArrayBuffer.
+ */
+async function packSite(fs, path, siteDir, extras) {
+  const files = publishFiles(fs, path, siteDir, extras);
   if (!files.some((file) => file.path === "index.html")) {
     throw new Error("this site has no index.html to publish");
   }
@@ -293,6 +303,7 @@ function listSites(fs, path, sitesDir) {
 module.exports = {
   validSiteName,
   collectSiteFiles,
+  publishFiles,
   tar,
   gzip,
   packSite,
