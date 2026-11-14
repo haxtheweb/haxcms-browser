@@ -440,7 +440,9 @@
         status.textContent = "";
         status.dataset.state = "ready";
         const link = document.createElement("a");
-        link.href = "https://" + domain + "/";
+        // domain is a checked hostname (cleanDomain), which encoding leaves
+        // as it is; encoding keeps it from ever being more than a host
+        link.href = "https://" + encodeURIComponent(domain) + "/";
         link.target = "_blank";
         link.rel = "noopener";
         link.textContent = "https://" + domain;
