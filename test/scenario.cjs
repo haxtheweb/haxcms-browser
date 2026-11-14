@@ -113,7 +113,18 @@ async function runScenario(adapter) {
   const shape = manifest.items
     .map((i) => `${i.title} < ${titleOf[i.parent] || "(root)"} #${i.order}`)
     .sort();
-  return { steps, outline: shape };
+  // llms-full.txt (the whole site as markdown; publishing packs it for
+  // static hosts): compare its headings, the page bodies are empty here
+  const llmsFull = await adapter.request(
+    "GET",
+    "/_sites/" + SITE + "/llms-full.txt",
+    { headers: { accept: "text/markdown" } },
+  );
+  steps.push({ step: "llms-full.txt", status: llmsFull.status });
+  const llmsHeadings = String(llmsFull.text)
+    .split("\n")
+    .filter((line) => /^#{1,2} /.test(line));
+  return { steps, outline: shape, llmsHeadings };
 }
 
 module.exports = { runScenario };

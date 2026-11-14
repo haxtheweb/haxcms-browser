@@ -39,8 +39,10 @@
  *   packSite    { name }            one site packed for a static host, the
  *                                   same files the HAX CLI publishes:
  *                                   resolves { files, bytes, body } with
- *                                   body a gzipped tarball (ArrayBuffer).
- *                                   Reads only; the site is not changed
+ *                                   body a gzipped tarball (ArrayBuffer),
+ *                                   llms-full.txt included as HAXcms
+ *                                   serves it. Reads only; the site is
+ *                                   not changed
  *
  * Everything runs through the real haxcms-nodejs code. app.js is loaded with
  * HAXCMS_EMBEDDED=1 (no HTTP server, no listening, no timers; requests are
@@ -272,8 +274,8 @@ const handlers = {
     requireBooted();
     return publish.listSites(fs, path, sitesFolder());
   },
-  packSite({ name }) {
-    requireBooted();
+  async packSite({ name }) {
+    const HAXCMS = requireBooted();
     if (!publish.validSiteName(name)) {
       throw new Error("not a site name: " + String(name));
     }
@@ -281,7 +283,22 @@ const handlers = {
     if (!fs.existsSync(siteDir) || !fs.lstatSync(siteDir).isDirectory()) {
       throw new Error("no site named " + name);
     }
-    return publish.packSite(fs, path, siteDir);
+    // llms-full.txt as haxcms-nodejs answers it, so a static host has it
+    // too; anything but a 200 (a private site answers 404) adds nothing
+    const extras = [];
+    const llms = await handlers.request({
+      method: "GET",
+      url: "/" + HAXCMS.sitesDirectory + "/" + name + "/llms-full.txt",
+      headers: { accept: "text/markdown" },
+      binary: true,
+    });
+    if (llms && llms.status === 200 && llms.body) {
+      extras.push({
+        path: "llms-full.txt",
+        bytes: new Uint8Array(llms.body),
+      });
+    }
+    return publish.packSite(fs, path, siteDir, extras);
   },
 };
 

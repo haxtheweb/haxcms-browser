@@ -93,7 +93,7 @@ Scope and plan: [haxtheweb/issues#3341](https://github.com/haxtheweb/issues/issu
 
 **Publish** in the top bar picks a site, an address (`something.surge.sh`, or a domain you pointed at Surge) and a Surge account, then publishes:
 
-1. The Worker packs the site (`src/runtime/publish.cjs`): the same files `hax site site:surge` publishes, with `ghpages.html` served as `index.html`, and without what only a local HAXcms needs (`build/`, `wc-registry.json`, `assets/babel*`, `node_modules`, `dist`, logs, dotfiles, symbolic links). The site itself is not changed.
+1. The Worker packs the site (`src/runtime/publish.cjs`): the same files `hax site site:surge` publishes, with `ghpages.html` served as `index.html`, `llms-full.txt` added as the in-browser HAXcms serves it (none for private sites; a site's own file is kept), and without what only a local HAXcms needs (`build/`, `wc-registry.json`, `assets/babel*`, `node_modules`, `dist`, logs, dotfiles, symbolic links). The site itself is not changed.
 2. The page sends that gzipped tarball to the **publish broker** on the same deployment (`api/surge/deploy`), which passes it to the [Surge deploy API](https://surge.sh/docs/api/deploys) and streams Surge's progress back.
 3. The bar shows the live address. The address is remembered for that site in this browser; a site's `CNAME` (where the CLI published it) is used first.
 
@@ -114,7 +114,7 @@ Rules it keeps (`api/_lib/broker.js`):
 - Only the deployment's own origin, or origins listed in `HAX_BROKER_ALLOWED_ORIGINS` (comma-separated), may call it. It is not a public proxy.
 - Requests only go to Surge's fixed address; the domain a caller sends is validated as a hostname and used as one path segment.
 - Passwords and tokens never go into a log, a response header or an error message.
-- Sites over 4 MB packed are refused (Vercel functions take at most 4.5 MB). For those the page tries Surge directly, which only works if Surge accepts requests from browsers, and otherwise says to download the site and publish it with the HAX CLI.
+- Sites over 4 MB packed are refused (Vercel functions take at most 4.5 MB). Surge's API sends no CORS headers, so a browser can't reach it without the broker: the dialog states the limit up front and, for bigger sites, stops before uploading and points to Download site and the HAX CLI, which has no size limit.
 
 ### Forks and other copies
 

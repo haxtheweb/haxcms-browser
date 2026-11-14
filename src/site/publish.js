@@ -165,6 +165,7 @@
     const signedInText = byId("publish-signed-in-text");
     const forget = byId("publish-forget");
     const status = byId("publish-status");
+    const limit = byId("publish-limit");
     const submit = byId("publish-submit");
     const cancel = byId("publish-cancel");
 
@@ -226,12 +227,9 @@
       showTokenCommand();
     }
 
-    // a broker that answered is remembered; one that did not is asked again
-    // next time, in case it was only out for a moment
+    // asked each time the dialog opens: the answer is small, and a broker
+    // that was out a moment ago, or whose limits changed, is seen again
     async function checkBroker() {
-      if (broker) {
-        return broker;
-      }
       try {
         const response = await fetch(new URL("status", brokerBase), {
           cache: "no-store",
@@ -252,6 +250,13 @@
       const found = await checkBroker();
       none.hidden = !!found;
       fields.hidden = !found;
+      limit.hidden = !(found && found.maxBytes);
+      if (found && found.maxBytes) {
+        limit.textContent =
+          "Free publishing from the browser takes sites up to " +
+          formatBytes(found.maxBytes) +
+          " once packed (text, pages and a few images). For bigger sites, use Download site in the dashboard and publish with the HAX CLI, which has no size limit.";
+      }
       submit.hidden = !found;
       if (found) {
         try {
@@ -322,50 +327,34 @@
       return surge.token;
     }
 
-    // Send the packed site through the broker, or (too large for it)
-    // straight to Surge, which only works if Surge accepts the request from
-    // a browser.
+    // Send the packed site through the broker. Surge does not accept
+    // requests from browsers (no CORS headers), so there is no way around
+    // the broker's size limit from here: bigger sites are stopped before
+    // any upload with a way forward.
     async function deploy(domain, token, packed) {
-      const viaBroker =
-        !broker.maxBytes || packed.byteLength <= broker.maxBytes;
-      let response;
-      if (viaBroker) {
-        response = await fetch(
-          new URL(
-            "surge/deploy?domain=" + encodeURIComponent(domain),
-            brokerBase,
-          ),
-          {
-            method: "PUT",
-            headers: {
-              authorization: "Bearer " + token,
-              "content-type": "application/gzip",
-            },
-            body: packed,
-          },
+      if (broker.maxBytes && packed.byteLength > broker.maxBytes) {
+        throw new Error(
+          "This site is " +
+            formatBytes(packed.byteLength) +
+            " packed, over the " +
+            formatBytes(broker.maxBytes) +
+            " that can be published from the browser. Use Download site in the dashboard, then publish the folder with the HAX CLI (hax site site:surge), which has no size limit.",
         );
-      } else {
-        try {
-          response = await fetch(
-            "https://surge.surge.sh/" + encodeURIComponent(domain),
-            {
-              method: "PUT",
-              headers: {
-                authorization: "Basic " + btoa("token:" + token),
-                "content-type": "application/gzip",
-                accept: "application/x-ndjson",
-              },
-              body: packed,
-            },
-          );
-        } catch (e) {
-          throw new Error(
-            "This site (" +
-              formatBytes(packed.byteLength) +
-              " packed) is too large to publish from the browser. Use Download site in the dashboard and publish it with the HAX CLI.",
-          );
-        }
       }
+      const response = await fetch(
+        new URL(
+          "surge/deploy?domain=" + encodeURIComponent(domain),
+          brokerBase,
+        ),
+        {
+          method: "PUT",
+          headers: {
+            authorization: "Bearer " + token,
+            "content-type": "application/gzip",
+          },
+          body: packed,
+        },
+      );
       if (!response.ok) {
         if (response.status === 401) {
           surge = null;

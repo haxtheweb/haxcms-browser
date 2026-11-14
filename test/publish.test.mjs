@@ -157,3 +157,24 @@ test("site names are folder names, never paths", () => {
     assert.equal(publish.validSiteName(name), false, String(name));
   }
 });
+
+test("generated files are added only where the site has none", async () => {
+  const fs = seed();
+  const extra = { path: "llms-full.txt", bytes: Buffer.from("# Site One\n") };
+  const added = await publish.packSite(fs, path.posix, SITE, [extra]);
+  assert.equal(added.files, 9);
+  fs.writeFileSync(SITE + "/llms-full.txt", "# the site's own\n");
+  const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "publish-test-"));
+  try {
+    const kept = await publish.packSite(fs, path.posix, SITE, [extra]);
+    assert.equal(kept.files, 9);
+    const archive = path.join(dir, "site.tar.gz");
+    nodeFs.writeFileSync(archive, new Uint8Array(kept.body));
+    const out = spawnSync("tar", ["-xzOf", archive, "./llms-full.txt"], {
+      encoding: "utf8",
+    });
+    assert.equal(out.stdout, "# the site's own\n");
+  } finally {
+    nodeFs.rmSync(dir, { recursive: true, force: true });
+  }
+});

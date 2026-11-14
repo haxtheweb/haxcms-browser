@@ -785,6 +785,63 @@ test("without a publish broker, Publish points to Download site and the CLI", as
   );
 });
 
+test("Publish states the size limit and stops bigger sites before uploading", async () => {
+  const require = createRequire(import.meta.url);
+  const deploy = require("../api/surge/deploy.js");
+  let uploads = 0;
+  server.setApi((req, res) => {
+    const pathname = new URL(req.url, "http://x").pathname;
+    if (pathname === "/api/status") {
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({ broker: 1, publish: { surge: { maxBytes: 1024 } } }),
+      );
+      return;
+    }
+    if (pathname === "/api/surge/deploy") {
+      uploads++;
+      deploy(req, res);
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+  try {
+    await host.bringToFront();
+    await host.click("#publish-button");
+    await host.waitForFunction(
+      () =>
+        document.getElementById("publish").open &&
+        !document.getElementById("publish-limit").hidden,
+      { timeout: 15000 },
+    );
+    assert.match(
+      await host.$eval("#publish-limit", (el) => el.textContent),
+      /up to 1 KB.*HAX CLI/,
+    );
+    await host.select("#publish-site", SITE);
+    await host.$eval("#publish-domain", (el) => {
+      el.value = "too-big.surge.sh";
+    });
+    await host.type("#publish-token", "token0123456789");
+    await host.click("#publish-submit");
+    await host.waitForFunction(
+      () => document.getElementById("publish-status").dataset.state === "error",
+      { timeout: 60000 },
+    );
+    assert.match(
+      await host.$eval("#publish-status", (el) => el.textContent),
+      /over the 1 KB.*hax site site:surge/,
+    );
+    assert.equal(uploads, 0);
+    // forget the token so the next test starts signed out
+    await host.click("#publish-forget");
+    await host.click("#publish-cancel");
+  } finally {
+    server.setApi(null);
+  }
+});
+
 test("Publish packs the site and sends it through the broker to Surge", async () => {
   const require = createRequire(import.meta.url);
   // a stand-in for the Surge API
@@ -890,6 +947,22 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
       fs.readFileSync(path.join(unpacked, "ghpages.html"), "utf8"),
     );
     assert.equal(fs.existsSync(path.join(unpacked, "build")), false);
+    // llms-full.txt, exactly as the in-browser HAXcms answers it
+    const served = await frame.evaluate(
+      async (base, site) => {
+        const response = await fetch(
+          base + "_sites/" + site + "/llms-full.txt",
+        );
+        return { status: response.status, text: await response.text() };
+      },
+      mount,
+      SITE,
+    );
+    assert.equal(served.status, 200);
+    assert.equal(
+      fs.readFileSync(path.join(unpacked, "llms-full.txt"), "utf8"),
+      served.text,
+    );
     await host.click("#publish-cancel");
   } finally {
     server.setApi(null);
