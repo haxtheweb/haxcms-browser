@@ -13,8 +13,14 @@
  * - only regular files are packed; symbolic links (the ones haxcms-nodejs
  *   makes inside a site point at its shared front-end build) are skipped
  *
- * Nothing in the site is changed: the index.html swap happens in the packed
- * copy only.
+ * - llms-full.txt (the whole site as one markdown document for AI agents,
+ *   haxtheweb/issues#3104): a static host has no server to answer it, so the
+ *   pack carries the answer the in-browser HAXcms gives for it (the
+ *   anonymous view; private sites have none). A llms-full.txt the site
+ *   already has is kept as it is, like the CLI does
+ *
+ * Nothing in the site is changed: the index.html swap and llms-full.txt
+ * happen in the packed copy only.
  *
  * The pack is a gzipped tarball whose entries sit under "./", the layout
  * `tar czf - -C <site> .` makes and the Surge deploy API expects.
@@ -220,10 +226,17 @@ async function gzip(bytes) {
 
 /**
  * Pack one site folder for a static host: { files, bytes, body } where body
- * is the gzipped tarball as an ArrayBuffer.
+ * is the gzipped tarball as an ArrayBuffer. extras ([{ path, bytes }]) are
+ * generated files to add, each only where the site has no file of that name.
  */
-async function packSite(fs, path, siteDir) {
+async function packSite(fs, path, siteDir, extras) {
   const files = collectSiteFiles(fs, path, siteDir);
+  for (const extra of extras || []) {
+    if (!files.some((file) => file.path === extra.path)) {
+      files.push(extra);
+    }
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (!files.some((file) => file.path === "index.html")) {
     throw new Error("this site has no index.html to publish");
   }

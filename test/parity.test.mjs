@@ -157,6 +157,7 @@ test("HTTP API: browser and Node give the same results", async () => {
 
   assert.deepEqual(browserResult.steps, nodeResult.steps);
   assert.deepEqual(browserResult.outline, nodeResult.outline);
+  assert.deepEqual(browserResult.llmsHeadings, nodeResult.llmsHeadings);
   // the scenario has to have worked, not just failed the same way twice
   const status = (name) =>
     browserResult.steps.find((s) => s.step === name).status;
