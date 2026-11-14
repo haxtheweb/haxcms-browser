@@ -15,7 +15,12 @@ You get the real HAX dashboard and editor. Make a site from a template, open it,
 - **A save only succeeds once it is written.** If the folder can't be written (moved, deleted, permission lost), the editor gets an error and the bar says "Not saved".
 - **Keep the first tab open.** "Go to Site" opens a new tab; that page is still served by the tab where HAXcms started. A second HAXcms tab runs without saving, so two tabs can't overwrite each other.
 - **Download site** in the dashboard gives you a zip of a site.
-- **Publish** (on browser.hax.cloud) puts a site on the web for free with [Surge](https://surge.sh): paste a Surge token, or sign in with a Surge email and password. See [Publishing a site](#publishing-a-site).
+- **Publish** (on browser.hax.cloud) puts a site on the web for free: Surge, GitHub Pages, GitLab Pages, Codeberg Pages, Netlify or Vercel. See [Publishing a site](#publishing-a-site).
+- **Sign in** with Google, Microsoft, GitHub, GitLab or Apple: new sites get you as their author.
+- **Save to the cloud** keeps your sites in Google Drive, OneDrive, Dropbox, Box or a WebDAV server such as Nextcloud, so they aren't tied to one browser.
+
+Which services a deployment offers depends on the OAuth apps whoever runs it has registered: see [docs/providers.md](docs/providers.md).
+
 - **Details** in the top bar shows what is running, what is not available in the browser, and the build to quote in a bug report.
 - Problems go to [haxtheweb/issues](https://github.com/haxtheweb/issues/issues).
 
@@ -89,15 +94,24 @@ npm run serve      # http://127.0.0.1:8080/haxcms-browser/
 
 ## Publishing a site
 
-Scope and plan: [haxtheweb/issues#3341](https://github.com/haxtheweb/issues/issues/3341). Surge is the first host; GitHub Pages and others follow.
+Scope and plan: [haxtheweb/issues#3341](https://github.com/haxtheweb/issues/issues/3341). Setting up each service: [docs/providers.md](docs/providers.md).
 
-**Publish** in the top bar picks a site, an address (`something.surge.sh`, or a domain you pointed at Surge) and a Surge account, then publishes:
+**Publish** in the top bar picks a site and a host:
 
-1. The Worker packs the site (`src/runtime/publish.cjs`): the same files `hax site site:surge` publishes, with `ghpages.html` served as `index.html`, `llms-full.txt` added as the in-browser HAXcms serves it (none for private sites; a site's own file is kept), and without what only a local HAXcms needs (`build/`, `wc-registry.json`, `assets/babel*`, `node_modules`, `dist`, logs, dotfiles, symbolic links). The site itself is not changed.
-2. The page sends that gzipped tarball to the **publish broker** on the same deployment (`api/surge/deploy`), which passes it to the [Surge deploy API](https://surge.sh/docs/api/deploys) and streams Surge's progress back.
-3. The bar shows the live address. The address is remembered for that site in this browser; a site's `CNAME` (where the CLI published it) is used first.
+- **Surge** (no setup): an address (`something.surge.sh`, or a domain you pointed at Surge) and a Surge account. The Worker packs the site into a gzipped tarball and the page sends it through the **publish broker** (`api/surge/deploy`) to the [Surge deploy API](https://surge.sh/docs/api/deploys). Surge accounts: a pasted token (`surge tokens add --domain <address>` makes one that only works for that address), or an email and password, which the broker sends to Surge once to get a token (`api/surge/token`; Surge creates the account if there is none).
+- **GitHub Pages, GitLab Pages, Codeberg Pages, Netlify, Vercel** (when the deployment has set them up): a name, and the person's account on that host, signed in with a popup. The page then publishes straight to the host's API from the browser (`src/site/publish-hosts.js`), so there is no size limit of ours. Each host's dialog note says what it makes (a public repository, a project, a site) and the host's own limits.
 
-Surge accounts: a pasted token (`surge tokens add --domain <address>` makes one that only works for that address), or an email and password, which the broker sends to Surge once to get a token (`api/surge/token`; Surge creates the account if there is none). The token is kept in the tab's memory only.
+Every host gets the same files (`src/runtime/publish.cjs`): what `hax site site:surge` publishes, with `ghpages.html` served as `index.html`, `llms-full.txt` added as the in-browser HAXcms serves it (none for private sites; a site's own file is kept), and without what only a local HAXcms needs (`build/`, `wc-registry.json`, `assets/babel*`, `node_modules`, `dist`, logs, dotfiles, symbolic links). The site itself is not changed. GitHub Pages also gets `.nojekyll`; GitLab Pages gets the site in `public/` plus a `.gitlab-ci.yml`.
+
+The host and name (or Surge address) last used are remembered for each site in this browser; a site's `CNAME` (where the CLI published it) is used first for Surge.
+
+## Sign-in and cloud storage
+
+**Sign in** (`src/site/accounts.js`, `src/site/auth.js`) opens the service in a popup. The broker finishes the sign-in with the app's client secret (`api/oauth/token`), and the page fetches the person's profile from the service. When someone has signed in, every site they make next gets their name, email and picture as its author, saved through HAXcms's own SEO settings route right after the site is created.
+
+**Save to the cloud** moves HAXcms onto cloud storage (`src/runtime/remote.cjs`): Google Drive (a `HAXcms sites` folder, `drive.file` scope), OneDrive (the app's own folder), Dropbox (the app folder), Box (a `HAXcms sites` folder) or a WebDAV server. It plugs into the same `storage.cjs` a folder on the computer uses, so the same saving rules hold: a change is answered only after it is written, and a failed upload leaves the cloud copy as it was. The Worker asks the page for current tokens and renews an expired one once.
+
+Tokens stay in the tab: memory, and `sessionStorage` so a reload doesn't sign people out. A WebDAV app password is only kept in memory, so after a reload Reconnect asks for it again. The cloud choice (not its sign-in) is remembered, so the next visit offers **Reconnect**.
 
 ### The publish broker (`api/`)
 
@@ -108,17 +122,22 @@ Small [Vercel functions](https://vercel.com/docs/functions) deployed with the si
 | `GET /api/status`               | what this broker can publish to; the page asks before showing Publish |
 | `POST /api/surge/token`         | Surge email and password → token                                      |
 | `PUT /api/surge/deploy?domain=` | gzipped site tarball + `Authorization: Bearer <token>` → Surge        |
+| `GET /api/oauth/providers`      | the sign-in services set up here, public parts only                   |
+| `POST /api/oauth/token`         | a sign-in's code (+ PKCE verifier) → tokens, with the client secret   |
+| `POST /api/oauth/refresh`       | a refresh token → a new access token                                  |
+| `POST /api/oauth/apple`         | where Sign in with Apple posts back; sends name and email to the page |
 
 Rules it keeps (`api/_lib/broker.js`):
 
 - Only the deployment's own origin, or origins listed in `HAX_BROKER_ALLOWED_ORIGINS` (comma-separated), may call it. It is not a public proxy.
-- Requests only go to Surge's fixed address; the domain a caller sends is validated as a hostname and used as one path segment.
-- Passwords and tokens never go into a log, a response header or an error message.
+- Requests only go to fixed addresses written in the code (Surge, each sign-in service's token endpoint); the domain a caller sends is validated as a hostname and used as one path segment, and a provider name only picks from the list.
+- A sign-in is finished only for the page's own `oauth/callback.html` on an allowed origin.
+- Passwords, tokens and client secrets never go into a log, a response header or an error message; `GET /api/oauth/providers` never returns secrets.
 - Sites over 4 MB packed are refused (Vercel functions take at most 4.5 MB). Surge's API sends no CORS headers, so a browser can't reach it without the broker: the dialog states the limit up front and, for bigger sites, stops before uploading and points to Download site and the HAX CLI, which has no size limit.
 
 ### Forks and other copies
 
-The page looks for the broker at `/api/` on its own origin. A fork deployed to Vercel from its own repository gets a working broker with no setup, because `api/` deploys with the site and accepts its own origin. Copies on hosts without functions (the GitHub Pages copy, a fork on GitHub Pages) have no broker: Publish there says to use Download site and the HAX CLI. Sign-in providers that need OAuth apps (GitHub, Google, ...) will need each fork to register its own apps; that setup is documented when those providers land.
+The page looks for the broker at `/api/` on its own origin. A fork deployed to Vercel from its own repository gets a working broker with no setup for Surge; for the other services it registers its own OAuth apps and sets the variables in [docs/providers.md](docs/providers.md). Copies on hosts without functions (the GitHub Pages copy, a fork on GitHub Pages) have no broker: Publish there says to use Download site and the HAX CLI.
 
 ## Publishing the demo
 
