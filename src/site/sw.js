@@ -18,8 +18,8 @@
  *          an offline copy (below)
  *   something shared to the installed app from another app (POST <scope>share)
  *       -> held in this browser until the host page asks what to do with it
- *   reset.html
- *       -> never handled here, so it always comes from the web server
+ *   reset.html, hax-lite-callback.html
+ *       -> never handled here, so they always come from the web server
  *
  * A service worker cannot talk to a page's Worker directly, and each open
  * host page has its own Worker (its own in-memory sites). So a request is
@@ -78,6 +78,9 @@ const HOST_FILES = [
 // always from the web server, whatever this file is doing: the way out
 // (reset.html), and the lists an offline copy is checked against
 const RESET_PAGE = SCOPE + "reset.html";
+// where HAX Lite sends the browser back after an approval (publish.js):
+// a page of its own that needs a connection anyway, so never from a copy
+const HAX_LITE_RETURN = SCOPE + "hax-lite-callback.html";
 const ALWAYS_NETWORK = [SCOPE + "offline-manifest.json"];
 const ALWAYS_NETWORK_FOLDER = SCOPE + "offline-locales/";
 // where another app's share lands when HAX is installed (manifest.webmanifest)
@@ -616,6 +619,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (
     url.pathname === RESET_PAGE ||
+    url.pathname === HAX_LITE_RETURN ||
     ALWAYS_NETWORK.indexOf(url.pathname) !== -1 ||
     url.pathname.indexOf(ALWAYS_NETWORK_FOLDER) === 0
   ) {

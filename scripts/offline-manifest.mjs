@@ -16,7 +16,8 @@
  * them together are most of the front end (about 42,000 files) and a browser
  * only needs the languages its user reads. Source maps, type definitions and
  * notes for developers are not needed to run. sw.js is kept by the browser
- * itself, reset.html must always come from the web server, and these lists
+ * itself, reset.html and hax-lite-callback.html (where a HAX Lite approval
+ * returns to) must always come from the web server, and these lists
  * are what the copy is checked against.
  */
 import crypto from "node:crypto";
@@ -27,7 +28,13 @@ export const OFFLINE_FORMAT = 1;
 const MANIFEST = "offline-manifest.json";
 const LOCALES = "offline-locales";
 // never part of a copy (see above)
-const NOT_COPIED = [MANIFEST, "sw.js", "reset.html", ".nojekyll"];
+const NOT_COPIED = [
+  MANIFEST,
+  "sw.js",
+  "reset.html",
+  "hax-lite-callback.html",
+  ".nojekyll",
+];
 const NOT_NEEDED = /\.(map|md|ts|sh|header)$/;
 // copied, but a new one alone is not a new build
 const NOT_FINGERPRINTED = ["version.json"];

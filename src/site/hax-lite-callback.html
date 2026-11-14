@@ -1,0 +1,100 @@
+<!doctype html>
+<!--
+  Where HAX Lite sends the browser back after someone allows (or declines)
+  adding a site to their account (publish.js, "connect and approve").
+
+  The Publish dialog opens this page in its own window first, hands it the
+  address of the HAX Lite approval page, and waits here for the answer. The
+  two pages talk over a BroadcastChannel, which only reaches pages of this
+  origin, and this window cuts its link to the page that opened it before it
+  goes to HAX Lite. Like reset.html, the service worker never handles this
+  page and it needs no other file.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="haxcms-browser" content="hax-lite-callback" />
+    <title>Publish to HAX Lite</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Publish to HAX Lite</h1>
+      <p id="text" role="status">Getting ready…</p>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+        var text = document.getElementById("text");
+        var params = new URLSearchParams(globalThis.location.search);
+        if (typeof globalThis.BroadcastChannel !== "function") {
+          text.textContent =
+            "This browser cannot finish publishing from here. Close this window and use Download site instead.";
+          return;
+        }
+        var channel = new BroadcastChannel("haxcms-browser:hax-lite");
+        // back from HAX Lite: pass the answer on and close
+        if (params.has("state")) {
+          channel.postMessage({
+            type: "result",
+            state: params.get("state"),
+            code: params.get("code") || "",
+            error: params.get("error") || "",
+          });
+          // the one-time code does not stay in this window's address or history
+          globalThis.history.replaceState(
+            null,
+            "",
+            globalThis.location.pathname,
+          );
+          text.textContent = "Done. You can close this window.";
+          setTimeout(function () {
+            globalThis.close();
+          }, 300);
+          return;
+        }
+        // just opened by the Publish dialog: wait to be told where to go
+        var id = params.get("id") || "";
+        channel.onmessage = function (event) {
+          var message = event.data;
+          if (!message || message.type !== "go" || message.id !== id) {
+            return;
+          }
+          var url;
+          try {
+            url = new URL(message.url);
+          } catch (e) {
+            return;
+          }
+          var local =
+            url.hostname === "localhost" || url.hostname === "127.0.0.1";
+          if (
+            url.protocol !== "https:" &&
+            !(url.protocol === "http:" && local)
+          ) {
+            return;
+          }
+          clearInterval(announcing);
+          // HAX Lite's page gets no handle on the page that opened this one
+          globalThis.opener = null;
+          globalThis.location.replace(url.href);
+        };
+        // The Publish dialog starts listening once the site is packed, which
+        // can be after this page has loaded: keep saying so until it answers.
+        var announce = function () {
+          channel.postMessage({ type: "ready", id: id });
+        };
+        var announcing = setInterval(announce, 250);
+        announce();
+      })();
+    </script>
+  </body>
+</html>

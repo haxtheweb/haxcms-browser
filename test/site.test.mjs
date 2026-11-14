@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { startPagesServer } from "./helpers/pages-server.mjs";
 import { redirectSurge } from "./helpers/surge-stand-in.mjs";
+import { startHaxLite } from "./helpers/hax-lite-stand-in.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = "smoke-site";
@@ -969,6 +970,258 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
     restoreFetch();
     surge.close();
     fs.rmSync(unpacked, { recursive: true, force: true });
+  }
+});
+
+// ---- publishing to HAX Lite ---------------------------------------------
+
+// Open Publish, choose HAX Lite and fill in where the site goes.
+async function chooseHaxLite(address, sitePath) {
+  await host.bringToFront();
+  await host.click("#publish-button");
+  await host.waitForFunction(
+    (site) =>
+      document.getElementById("publish").open &&
+      Array.from(document.querySelectorAll("#publish-site option")).some(
+        (option) => option.value === site,
+      ),
+    { timeout: 15000 },
+    SITE,
+  );
+  await host.select("#publish-site", SITE);
+  await host.click('input[name="publish-target"][value="haxlite"]');
+  await host.$eval(
+    "#publish-haxlite-address",
+    (el, value) => {
+      el.value = value;
+    },
+    address,
+  );
+  if (sitePath) {
+    await host.$eval(
+      "#publish-haxlite-path",
+      (el, value) => {
+        el.value = value;
+      },
+      sitePath,
+    );
+  }
+}
+
+async function publishStatus() {
+  await host.waitForFunction(
+    () =>
+      ["ready", "error"].includes(
+        document.getElementById("publish-status").dataset.state,
+      ),
+    { timeout: 60000 },
+  );
+  return host.evaluate(() => ({
+    state: document.getElementById("publish-status").dataset.state,
+    text: document.getElementById("publish-status").textContent,
+    link: (document.querySelector("#publish-status a") || {}).href,
+    stored: JSON.stringify(Object.assign({}, globalThis.localStorage)),
+  }));
+}
+
+// back to how the dialog opens, for the tests that follow
+async function leaveHaxLite() {
+  await host.click('input[name="publish-target"][value="surge"]');
+  await host.click("#publish-cancel");
+}
+
+test("HAX Lite is offered without a publish broker, and Surge still is not", async () => {
+  await host.bringToFront();
+  await host.click("#publish-button");
+  await host.waitForFunction(() => document.getElementById("publish").open, {
+    timeout: 15000,
+  });
+  const shown = () =>
+    host.evaluate(() => ({
+      none: !document.getElementById("publish-none").hidden,
+      surge: !document.getElementById("publish-fields").hidden,
+      lite: !document.getElementById("publish-haxlite").hidden,
+      submit: !document.getElementById("publish-submit").hidden,
+    }));
+  assert.deepEqual(await shown(), {
+    none: true,
+    surge: false,
+    lite: false,
+    submit: false,
+  });
+  await host.click('input[name="publish-target"][value="haxlite"]');
+  assert.deepEqual(await shown(), {
+    none: false,
+    surge: false,
+    lite: true,
+    submit: true,
+  });
+  // a first publish suggests a path made from the site's name
+  await host.select("#publish-site", SITE);
+  assert.equal(
+    await host.$eval("#publish-haxlite-path", (el) => el.value),
+    SITE,
+  );
+  // what was typed is checked before any window opens
+  const pagesBefore = (await browser.pages()).length;
+  for (const [address, sitePath, pattern] of [
+    ["", SITE, /address of your HAX Lite/],
+    ["http://lite.example.edu", SITE, /address of your HAX Lite/],
+    ["https://lite.example.edu", "Not A Path", /site path/],
+  ]) {
+    await host.$eval(
+      "#publish-haxlite-address",
+      (el, value) => {
+        el.value = value;
+      },
+      address,
+    );
+    await host.$eval(
+      "#publish-haxlite-path",
+      (el, value) => {
+        el.value = value;
+      },
+      sitePath,
+    );
+    await host.click("#publish-submit");
+    const result = await publishStatus();
+    assert.equal(result.state, "error");
+    assert.match(result.text, pattern);
+  }
+  assert.equal((await browser.pages()).length, pagesBefore);
+  await leaveHaxLite();
+});
+
+test("Publish to HAX Lite: allowed in its own window, then the site goes straight to HAX Lite", async () => {
+  const origin = new URL(server.url).origin;
+  const lite = await startHaxLite(origin, {
+    skipped: ["custom/custom.js: this file type is not accepted"],
+  });
+  const unpacked = fs.mkdtempSync(path.join(os.tmpdir(), "haxcms-lite-"));
+  const pagesBefore = (await browser.pages()).length;
+  const brokerCalls = () =>
+    server.requests.filter((request) => / \/api\//.test(request)).length;
+  const brokerBefore = brokerCalls();
+  try {
+    await chooseHaxLite(lite.url, "moved-site");
+    await host.click("#publish-submit");
+    const result = await publishStatus();
+    assert.equal(result.state, "ready", result.text);
+    assert.equal(result.link, lite.url + "/moved-site/");
+    assert.match(result.text, /1 of 1 pages are now in your HAX Lite account/);
+    assert.match(
+      result.text,
+      /left out or changed, for example: custom\/custom\.js/,
+    );
+    assert.match(result.text, /edit it from My HAX/);
+
+    // the approval window: this origin's own page, from the web server (never
+    // relayed to HAXcms), and gone again
+    assert.ok(
+      server.requests.includes("GET /haxcms-browser/hax-lite-callback.html"),
+    );
+    assert.equal((await browser.pages()).length, pagesBefore);
+    // HAX Lite's page could not reach the page that opened the window
+    assert.deepEqual(lite.state.openers, ["none"]);
+
+    // one upload: the packed site, with the one-use pass
+    assert.equal(lite.state.uploads.length, 1);
+    const upload = lite.state.uploads[0];
+    assert.equal(upload.slug, "moved-site");
+    assert.equal(upload.type, "application/gzip");
+    assert.match(upload.key, /^[A-Za-z0-9_-]{16,100}$/);
+    assert.ok(lite.state.polls >= 1);
+    const archive = path.join(unpacked, "site.tar.gz");
+    fs.writeFileSync(archive, upload.body);
+    const extracted = spawnSync("tar", ["-xzf", archive, "-C", unpacked], {
+      encoding: "utf8",
+    });
+    assert.equal(extracted.status, 0, extracted.stderr);
+    assert.ok(fs.existsSync(path.join(unpacked, "site.json")));
+    assert.ok(fs.existsSync(path.join(unpacked, "pages")));
+
+    // every call was this page talking to HAX Lite directly: no broker
+    assert.ok(
+      lite.state.requests
+        .filter((request) => request.path.startsWith("/api/publish/v1/"))
+        .every((request) => request.origin === origin),
+    );
+    // (opening the dialog only asks this deployment whether it has a broker)
+    assert.ok(brokerCalls() - brokerBefore <= 1);
+
+    // the address and path are remembered; the code and the pass never are
+    assert.match(result.stored, /moved-site/);
+    assert.ok(result.stored.includes(lite.url));
+    assert.doesNotMatch(result.stored, /hlc_/);
+    for (const pass of lite.state.passes.keys()) {
+      assert.equal(result.stored.includes(pass), false);
+    }
+    await leaveHaxLite();
+  } finally {
+    lite.close();
+    fs.rmSync(unpacked, { recursive: true, force: true });
+  }
+});
+
+test("Publish to HAX Lite: a declined request, a closed door and a too-big site publish nothing", async () => {
+  const origin = new URL(server.url).origin;
+  const lite = await startHaxLite(origin);
+  const pagesBefore = (await browser.pages()).length;
+  try {
+    // declined on HAX Lite
+    lite.state.decline = true;
+    await chooseHaxLite(lite.url, "declined-site");
+    await host.click("#publish-submit");
+    let result = await publishStatus();
+    assert.equal(result.state, "error");
+    assert.match(result.text, /declined on HAX Lite/);
+    lite.state.decline = false;
+
+    // this HAX Lite has not turned on publishing from other websites
+    lite.state.doors = { upload: true, token: true, connect: false };
+    await host.click("#publish-submit");
+    result = await publishStatus();
+    assert.equal(result.state, "error");
+    assert.match(
+      result.text,
+      /has not turned on publishing from other websites/,
+    );
+    lite.state.doors = { upload: true, token: true, connect: true };
+
+    // a site over this HAX Lite's limit stops before anyone is asked
+    lite.state.maxBytes = 1024;
+    const asked = lite.state.codes.size;
+    await host.click("#publish-submit");
+    result = await publishStatus();
+    assert.equal(result.state, "error");
+    assert.match(result.text, /over the 1 KB this HAX Lite accepts/);
+    assert.equal(lite.state.codes.size, asked);
+    lite.state.maxBytes = 10 * 1024 * 1024;
+
+    // not a HAX Lite at all
+    await host.$eval(
+      "#publish-haxlite-address",
+      (el, value) => {
+        el.value = value;
+      },
+      origin,
+    );
+    await host.click("#publish-submit");
+    result = await publishStatus();
+    assert.equal(result.state, "error");
+    assert.match(
+      result.text,
+      /does not accept sites published from other tools/,
+    );
+
+    assert.equal(lite.state.uploads.length, 0);
+    assert.equal(lite.state.passes.size, 0);
+    // no window is left open behind any of them
+    await host.waitForFunction(() => true);
+    assert.equal((await browser.pages()).length, pagesBefore);
+    await leaveHaxLite();
+  } finally {
+    lite.close();
   }
 });
 

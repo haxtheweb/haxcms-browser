@@ -219,10 +219,30 @@
           <strong>Download site</strong> in the dashboard instead, then publish
           the folder with the HAX CLI (<code>hax site site:surge</code>).
         </p>
-        <div class="publish-fields" id="publish-fields">
+        <div class="publish-fields" id="publish-common">
           <label for="publish-site">Site</label>
           <select id="publish-site" required></select>
 
+          <fieldset class="publish-auth" id="publish-target">
+            <legend>Publish to</legend>
+            <div>
+              <label class="publish-choice">
+                <input
+                  type="radio"
+                  name="publish-target"
+                  value="surge"
+                  checked
+                />
+                Surge: a free web address
+              </label>
+              <label class="publish-choice">
+                <input type="radio" name="publish-target" value="haxlite" />
+                HAX Lite: move the site into your HAX Lite account
+              </label>
+            </div>
+          </fieldset>
+        </div>
+        <div class="publish-fields" id="publish-fields">
           <label for="publish-domain">Address</label>
           <div class="publish-address">
             <span aria-hidden="true">https://</span>
@@ -296,6 +316,38 @@
               Kept in this tab only, until you close it.
             </p>
           </fieldset>
+        </div>
+        <div class="publish-fields" id="publish-haxlite" hidden>
+          <label for="publish-haxlite-address">Your HAX Lite</label>
+          <input
+            id="publish-haxlite-address"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://lite.example.edu"
+            aria-describedby="publish-haxlite-address-help"
+          />
+          <p class="publish-help" id="publish-haxlite-address-help">
+            The web address of the HAX Lite you sign in to. A window opens there
+            so you can allow this site to be added. You never type a password or
+            token here.
+          </p>
+
+          <label for="publish-haxlite-path">Site path</label>
+          <input
+            id="publish-haxlite-path"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="publish-haxlite-path-help"
+          />
+          <p class="publish-help" id="publish-haxlite-path-help">
+            Where the site lives in your account: a lowercase letter, then
+            lowercase letters, numbers or hyphens. The site is copied in once;
+            after that you edit it in HAX Lite. Custom themes and custom code
+            are not carried over.
+          </p>
         </div>
         <p class="publish-status" id="publish-status" role="status"></p>
         <div class="publish-actions">
