@@ -34,6 +34,13 @@
  *                                   keeps its Set-Cookie for the session)
  *   readFile    { path }            read a file from the volume (base64)
  *   hashPassword { password }       HAXCMS.hashPassword (portability check)
+ *   listSites   {}                  the sites that can be published:
+ *                                   [{ name, title, domain }] (publish.cjs)
+ *   packSite    { name }            one site packed for a static host, the
+ *                                   same files the HAX CLI publishes:
+ *                                   resolves { files, bytes, body } with
+ *                                   body a gzipped tarball (ArrayBuffer).
+ *                                   Reads only; the site is not changed
  *
  * Everything runs through the real haxcms-nodejs code. app.js is loaded with
  * HAXCMS_EMBEDDED=1 (no HTTP server, no listening, no timers; requests are
@@ -61,6 +68,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { DirectoryStorage } = require("./storage.cjs");
+const publish = require("./publish.cjs");
 
 const DEFAULT_ORIGIN = "http://localhost";
 
@@ -260,6 +268,21 @@ const handlers = {
   hashPassword({ password }) {
     return requireBooted().hashPassword(password);
   },
+  listSites() {
+    requireBooted();
+    return publish.listSites(fs, path, sitesFolder());
+  },
+  packSite({ name }) {
+    requireBooted();
+    if (!publish.validSiteName(name)) {
+      throw new Error("not a site name: " + String(name));
+    }
+    const siteDir = path.join(sitesFolder(), name);
+    if (!fs.existsSync(siteDir) || !fs.lstatSync(siteDir).isDirectory()) {
+      throw new Error("no site named " + name);
+    }
+    return publish.packSite(fs, path, siteDir);
+  },
 };
 
 // message type -> handler; only these names can be called
@@ -280,6 +303,10 @@ function handle(message) {
       return handlers.readFile(message);
     case "hashPassword":
       return handlers.hashPassword(message);
+    case "listSites":
+      return handlers.listSites(message);
+    case "packSite":
+      return handlers.packSite(message);
     default:
       throw new Error("unknown message type " + String(message.type));
   }

@@ -1,6 +1,8 @@
 // A static file server that behaves like GitHub Pages for a project site:
 // the folder is served under /<name>/, anything else on the origin is a 404.
 // With no name it is served at the root, like a site with its own domain.
+// setApi(handler) answers /api/... with handler(req, res), standing in for
+// the publish broker a Vercel deployment has (api/); setApi(null) removes it.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -29,9 +31,14 @@ export function startPagesServer(folder, name, port = 0) {
   const prefix = name ? "/" + name + "/" : "/";
   const rootDir = fs.realpathSync(folder);
   const requests = [];
+  let api = null;
   const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
     requests.push(req.method + " " + pathname);
+    if (api && pathname.startsWith("/api/")) {
+      api(req, res);
+      return;
+    }
     const notFound = () => {
       res.statusCode = 404;
       res.setHeader("content-type", "text/html; charset=utf-8");
@@ -67,6 +74,9 @@ export function startPagesServer(folder, name, port = 0) {
       resolve({
         url: `http://127.0.0.1:${server.address().port}${prefix}`,
         requests,
+        setApi: (handler) => {
+          api = handler;
+        },
         close: () => server.close(),
       });
     });

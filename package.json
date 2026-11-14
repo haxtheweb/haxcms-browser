@@ -25,7 +25,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:security": "eslint --config eslint.security.config.mjs \"src/**/*.cjs\" \"src/**/*.js\" \"scripts/**/*.mjs\"",
+    "lint:security": "eslint --config eslint.security.config.mjs \"api/**/*.js\" \"src/**/*.cjs\" \"src/**/*.js\" \"scripts/**/*.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "precheck": "node scripts/precheck.mjs",

@@ -26,6 +26,17 @@ export default [
     },
   },
   {
+    files: ["api/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-restricted-syntax": ["error", noInterpolatedExec, noOptionalChaining],
+    },
+  },
+  {
     files: ["src/runtime/**/*.cjs", "src/site/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",

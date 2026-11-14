@@ -23,6 +23,7 @@ https://github.com/haxtheweb/praw, and is read from there instead of being copie
 - **Test against haxcms-nodejs main**, not only the published package (`HAXCMS_NODEJS_SRC`). When a change needs haxcms-nodejs changed too, use the same branch name in both repos: CI here builds against that branch until it lands.
 - **Saving.** A request that can change something is answered only after its changes are written to storage; if that fails, the response is an error (`BROWSER_STORAGE_WRITE_FAILED`), never a success. A failed write must leave the previous file intact. Only regular files and folders under the sites folder are written out, and nothing outside the user's chosen folder is touched.
 - **Relay rules (`src/site/sw.js`).** Navigations are relayed for GET only; a write is relayed only from a page inside the session's mount; relayed requests never reach the network. Keep these when changing the service worker. The site must work under a path (GitHub Pages) and at the root of a domain (Vercel): never assume either. Requests from a blank frame (`about:blank`) are not seen by the service worker in Chrome, so anything loaded from one needs its real static address.
+- **Publish broker (`api/`).** Stateless: no storage, no logging of bodies, passwords or tokens. Only its own origin (or `HAX_BROKER_ALLOWED_ORIGINS`) may call it; outbound requests go only to the service's fixed address, with caller input validated and used as a path segment, never a host. Publishing packs the same files the HAX CLI publishes (`src/runtime/publish.cjs`) and never changes the site.
 - No optional chaining (`?.`); use `globalThis`, not `window` (the runtime is a Worker).
 
 ## Commands
@@ -42,12 +43,14 @@ npm run lint:security
 - `src/runtime/worker.cjs`: the Worker and its message protocol
 - `src/runtime/storage.cjs`: keeps the sites folder in the volume and a directory handle (the user's folder or browser storage) the same: load, flush, refresh
 - `src/runtime/shims/`: Node built-ins the Worker provides itself (fs → memfs, http → requests dispatched to the Express app, process, os, crypto with scrypt / KeyObject / randomInt, net address checks, tty, async_hooks) and `sharp.cjs`, the stand-in for sharp built on the browser's image decoding
-- `src/site/`: the hosted demo. `index.html` + `shell.js` (host page: owns the Worker, signs in, keeps the session's cookies, answers relayed requests), `sw.js` (service worker: relays HAXcms requests to the host page, serves front-end build files from the static copy), `frame.js` (title and address sync)
+- `src/runtime/publish.cjs`: packs a site for a static host (file selection matching `hax site site:surge`, ustar tarball, gzip)
+- `api/`: the publish broker, Vercel functions deployed with the site (`status.js`, `surge/token.js`, `surge/deploy.js`; shared rules in `_lib/broker.js`)
+- `src/site/`: the hosted demo. `index.html` + `shell.js` (host page: owns the Worker, signs in, keeps the session's cookies, answers relayed requests), `publish.js` (the Publish dialog), `sw.js` (service worker: relays HAXcms requests to the host page, serves front-end build files from the static copy), `frame.js` (title and address sync)
 - `scripts/build-site.mjs`: assembles the static site (`npm run build:site`); `scripts/serve-site.mjs` serves it like GitHub Pages (`npm run serve`)
 - `.github/workflows/pages.yml`: publishes the demo to GitHub Pages from `main`
 - `scripts/start.mjs`: `npm start`, builds the site if missing and serves it
 - `scripts/build-hosted.mjs` + `vercel.json`: the same build in one step for hosts that build from the repository (`npm run build:hosted`)
-- `test/`: parity scenario and Node runner (`parity.test.mjs`), the hosted demo end to end (`site.test.mjs`) and at the root of a domain (`root.test.mjs`), and the storage layer against a stand-in folder (`storage.test.mjs`)
+- `test/`: parity scenario and Node runner (`parity.test.mjs`), the hosted demo end to end (`site.test.mjs`, including Publish through a stand-in broker and Surge), the packer (`publish.test.mjs`), the broker (`broker.test.mjs`) and at the root of a domain (`root.test.mjs`), and the storage layer against a stand-in folder (`storage.test.mjs`)
 
 ## Pull requests
 
