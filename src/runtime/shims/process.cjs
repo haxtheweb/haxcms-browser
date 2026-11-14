@@ -58,9 +58,15 @@ const proc = {
     isTTY: false,
     write: (s) => console.log(String(s).replace(/\n$/, "")),
   },
+  // stderr is where haxcms-nodejs leaves notes for whoever runs the server,
+  // like the first-run "seeded admin" banner (a password file in this tab's
+  // own volume, which the runtime signs in with by itself). Nobody runs a
+  // server here, so they go to the console's Verbose level: kept for
+  // debugging, not shown as warnings or errors to a visitor. Failures still
+  // reach the page as error responses and the worker's own console.error.
   stderr: {
     isTTY: false,
-    write: (s) => console.warn(String(s).replace(/\n$/, "")),
+    write: (s) => console.debug(String(s).replace(/\n$/, "")),
   },
 };
 
