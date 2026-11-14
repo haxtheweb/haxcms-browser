@@ -13,12 +13,21 @@
  *                               each site is a normal HAXsite folder in it
  *   this browser                the browser's private file system for this
  *                               page; the default, one tab at a time
+ *   the cloud                   Google Drive, OneDrive, Dropbox, Box or a
+ *                               WebDAV server ("Save to the cloud",
+ *                               accounts.js; runtime/remote.cjs); the
+ *                               choice is remembered, the sign-in lasts
+ *                               until the tab closes
  *   nowhere (memory only)       when neither is possible; gone on reload
  * The Worker loads the sites from there on start and writes every change
  * back before it answers the request that made it (see runtime/worker.cjs).
  *
  * Publish (publish.js) puts a site on the web through this deployment's
- * publish broker (api/), when it has one.
+ * publish broker (api/), or straight to hosts people sign in to.
+ *
+ * Sign in (accounts.js, auth.js): when someone has signed in, each site
+ * they make gets their name, email and picture as its author, set through
+ * HAXcms's own SEO settings route right after the site is created.
  *
  * The page can be installed as an app and kept for use with no connection
  * (offline.js), and installed it takes what other apps share to it
@@ -38,6 +47,7 @@
   const folderButton = document.getElementById("folder-button");
   const reopenButton = document.getElementById("reopen-button");
   const browserButton = document.getElementById("browser-button");
+  const cloudButton = document.getElementById("cloud-button");
 
   const scope = new URL("./", globalThis.location.href).pathname;
   // one random id per host page, so two tabs never answer for each other
@@ -51,18 +61,30 @@
   const NOT_SAVED = "Not saved: your last change did not reach storage";
   const BROWSER_STORE = "haxcms-sites";
   const BROWSER_LOCK = "haxcms-browser:browser-storage";
+  // the cloud storage last used (no secrets): { provider, label, webdav: { url, username } }
+  const CLOUD_CHOICE = "haxcms-browser:cloud";
   const canPickFolder = typeof globalThis.showDirectoryPicker === "function";
 
-  // where sites are saved: { kind: "folder" | "browser" | "memory", handle, reason }
+  // where sites are saved:
+  // { kind: "folder" | "browser" | "cloud" | "memory", handle, remote, label, reason }
   let storage = { kind: "memory", handle: null, reason: "" };
   // a folder used before that needs the user's go-ahead to open again
   let remembered = null;
+  // cloud storage used before that needs signing in again
+  let rememberedCloud = null;
   let snapshot = null;
   let version = {};
   let running = false;
+  const auth = globalThis.HaxcmsAuth();
   const publisher = globalThis.HaxcmsPublish({
     send,
     isRunning: () => running,
+    auth,
+  });
+  const accounts = globalThis.HaxcmsAccounts({
+    auth,
+    isRunning: () => running,
+    useCloud,
   });
   const offline = globalThis.HaxcmsOffline({ toast });
   const sharer = globalThis.HaxcmsShare({
@@ -85,6 +107,7 @@
   function fail(title, error) {
     running = false;
     publisher.show(false);
+    accounts.show(false);
     sharer.hide();
     setStatus("HAXcms could not start", "error");
     frame.hidden = true;
@@ -187,10 +210,21 @@
         '" on this computer. Nothing is sent to a server.'
       );
     }
+    if (storage.kind === "cloud") {
+      return (
+        "Saving to " +
+        storage.label +
+        (storage.remote.provider === "webdav"
+          ? "."
+          : ', in a "HAXcms sites" folder there.')
+      );
+    }
     if (storage.kind === "browser") {
       return (
-        "Saved in this browser, on this computer. Nothing is sent to a server." +
-        (canPickFolder ? " Save to a folder to keep your sites as files." : "")
+        "Saved in this browser, on this computer. Browsers can clear this storage when space runs low: " +
+        (canPickFolder
+          ? "save to a folder or the cloud to keep your sites."
+          : "save to the cloud to keep your sites.")
       );
     }
     return (
@@ -206,11 +240,130 @@
     folderButton.hidden = !canPickFolder;
     folderButton.textContent =
       storage.kind === "folder" ? "Change folder" : "Save to a folder";
-    browserButton.hidden = storage.kind !== "folder";
-    reopenButton.hidden = !(remembered && storage.kind !== "folder");
-    if (remembered) {
-      reopenButton.textContent = 'Reopen folder "' + remembered.name + '"';
+    browserButton.hidden =
+      storage.kind !== "folder" && storage.kind !== "cloud";
+    browserButton.textContent =
+      storage.kind === "cloud"
+        ? "Stop using " + storage.label
+        : "Stop using the folder";
+    cloudButton.textContent =
+      storage.kind === "cloud" ? "Change cloud storage" : "Save to the cloud";
+    if (rememberedCloud && storage.kind !== "cloud") {
+      reopenButton.hidden = false;
+      reopenButton.textContent = "Reconnect " + rememberedCloud.label;
+    } else {
+      reopenButton.hidden = !(remembered && storage.kind !== "folder");
+      if (remembered) {
+        reopenButton.textContent = 'Reopen folder "' + remembered.name + '"';
+      }
     }
+  }
+
+  // --- cloud storage ---------------------------------------------------
+  function loadCloudChoice() {
+    try {
+      const value = JSON.parse(
+        globalThis.localStorage.getItem(CLOUD_CHOICE) || "null",
+      );
+      return value && typeof value.provider === "string" ? value : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveCloudChoice(choice) {
+    try {
+      if (choice) {
+        globalThis.localStorage.setItem(
+          CLOUD_CHOICE,
+          JSON.stringify({
+            provider: choice.remote.provider,
+            label: choice.label,
+            webdav: choice.remote.webdav
+              ? {
+                  url: choice.remote.webdav.url,
+                  username: choice.remote.webdav.username,
+                }
+              : null,
+          }),
+        );
+      } else {
+        globalThis.localStorage.removeItem(CLOUD_CHOICE);
+      }
+    } catch (e) {
+      // storage can be off: the choice then lasts until reload
+    }
+  }
+
+  // the remembered cloud choice as a storage, if it can be used without
+  // asking (still signed in in this tab); null otherwise
+  function cloudFromChoice(choice) {
+    if (!choice) {
+      return null;
+    }
+    if (choice.provider === "webdav") {
+      // the app password is never stored: reconnecting asks for it again
+      return null;
+    }
+    if (!auth.signedIn(choice.provider)) {
+      return null;
+    }
+    return {
+      kind: "cloud",
+      remote: { provider: choice.provider },
+      label: choice.label,
+      reason: "",
+    };
+  }
+
+  // Move HAXcms onto cloud storage (accounts.js calls this once signed in).
+  // Empty there: the sites open now are copied in. Sites there already:
+  // HAXcms starts again from them, like opening a folder of sites.
+  async function useCloud(choice) {
+    const chosen = {
+      kind: "cloud",
+      remote: choice.remote,
+      label: choice.label,
+      reason: "",
+    };
+    const inspected = await send("inspectRemote", { remote: choice.remote });
+    saveCloudChoice(chosen);
+    rememberedCloud = null;
+    await forgetFolder();
+    remembered = null;
+    if (inspected.entries === 0 && running) {
+      setStatus("Saving your sites to " + choice.label + "…", "");
+      await send("useStorage", { remote: choice.remote });
+      storage = chosen;
+      setStatus(RUNNING, "ready");
+      showStorage();
+      showDetails();
+      return;
+    }
+    try {
+      await restart(chosen);
+    } catch (error) {
+      // don't leave HAXcms stopped: back to this browser's storage
+      saveCloudChoice(null);
+      await restart(await browserStorage());
+      throw error;
+    }
+  }
+
+  // Answer the Worker's requests for a sign-in token (cloud storage).
+  function answerTokenRequest(data) {
+    auth
+      .token(data.provider, data.force)
+      .catch(() => null)
+      .then((token) => {
+        if (worker) {
+          worker.postMessage({
+            type: "token-reply",
+            requestId: data.requestId,
+            token: token || "",
+          });
+        }
+      });
   }
 
   // The folder last used is remembered in this browser (IndexedDB can hold a
@@ -315,6 +468,15 @@
   }
 
   async function chooseStorage() {
+    const cloudChoice = loadCloudChoice();
+    if (cloudChoice) {
+      const cloud = cloudFromChoice(cloudChoice);
+      if (cloud) {
+        return cloud;
+      }
+      // sign in again first; meanwhile this browser's storage
+      rememberedCloud = cloudChoice;
+    }
     remembered = await recallFolder();
     if (remembered && (await permission(remembered, false)) === "granted") {
       return { kind: "folder", handle: remembered, reason: "" };
@@ -369,6 +531,8 @@
     }
     await rememberFolder(handle);
     remembered = handle;
+    saveCloudChoice(null);
+    rememberedCloud = null;
     if (contents === "empty" && running) {
       // keep working: the sites open now are written into the new folder
       setStatus("Saving your sites to the folder…", "");
@@ -394,11 +558,39 @@
       });
   });
   reopenButton.addEventListener("click", () => {
+    if (rememberedCloud && storage.kind !== "cloud") {
+      const choice = rememberedCloud;
+      if (choice.provider === "webdav") {
+        // the app password isn't remembered: ask for it again
+        accounts.prefillWebdav(choice.webdav);
+        return;
+      }
+      // straight from the click, so the sign-in popup isn't blocked
+      auth
+        .signIn(choice.provider)
+        .then(() =>
+          useCloud({
+            remote: { provider: choice.provider },
+            label: choice.label,
+          }),
+        )
+        .catch((error) =>
+          notify(
+            "Could not reconnect " +
+              choice.label +
+              ". " +
+              String((error && error.message) || error),
+          ),
+        );
+      return;
+    }
     useFolder(remembered).catch((error) =>
       notify("That folder could not be opened. " + String(error)),
     );
   });
   browserButton.addEventListener("click", () => {
+    saveCloudChoice(null);
+    rememberedCloud = null;
     forgetFolder()
       .then(() => {
         remembered = null;
@@ -429,6 +621,10 @@
     worker = new Worker("./haxcms-worker.js");
     worker.onmessage = (event) => {
       const data = event.data || {};
+      if (data.type === "token-request") {
+        answerTokenRequest(data);
+        return;
+      }
       const waiting = pending.get(data.id);
       if (!waiting) {
         return;
@@ -505,6 +701,71 @@
     );
   }
 
+  // --- the signed-in person as the author of new sites -------------------
+  // Right after HAXcms makes a site, the author from the sign-in is saved
+  // through the same route the site editor's SEO settings use
+  // (PATCH x/api/v1/site/seo), with the site token HAXcms gives that site.
+  function decodeBody(body) {
+    if (!body) {
+      return "";
+    }
+    return new TextDecoder().decode(
+      body instanceof ArrayBuffer ? new Uint8Array(body) : body,
+    );
+  }
+
+  async function applyAuthor(siteName) {
+    const identity = auth.identity();
+    if (!identity || !(identity.name || identity.email)) {
+      return;
+    }
+    const author = {};
+    if (identity.name) {
+      author.name = identity.name;
+    }
+    if (identity.email) {
+      author.email = identity.email;
+    }
+    if (/^https:\/\//.test(identity.image || "")) {
+      author.image = identity.image;
+    }
+    const tokens = await siteTokens(siteName);
+    const saved = await signedInRequest({
+      method: "PATCH",
+      url: "/_sites/" + encodeURIComponent(siteName) + "/x/api/v1/site/seo",
+      headers: Object.assign({ "content-type": "application/json" }, tokens),
+      body: new TextEncoder().encode(
+        JSON.stringify({ site: { name: siteName }, author }),
+      ).buffer,
+    });
+    if (saved.status !== 200) {
+      console.warn(
+        "[haxcms-browser] the author could not be filled in (" +
+          saved.status +
+          ")",
+      );
+    }
+  }
+
+  // the site a successful create-site response is for, or ""
+  function createdSite(request, response) {
+    if (
+      request.method !== "POST" ||
+      !/\/system\/api\/v1\/sites\/?$/.test(String(request.url).split("?")[0]) ||
+      response.status !== 200
+    ) {
+      return "";
+    }
+    try {
+      const body = JSON.parse(decodeBody(response.body));
+      const link = String((body && body.link) || "");
+      const match = /\/_sites\/([^/]+)\/?$/.exec(link);
+      return match ? decodeURIComponent(match[1]) : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   // --- requests relayed by the service worker --------------------------
   function onServiceWorkerMessage(event) {
     // only this origin's service worker can reach this listener
@@ -536,8 +797,15 @@
       request.headers.cookie = cookieHeader();
     }
     return send("request", request, request.body ? [request.body] : []).then(
-      (response) => {
+      async (response) => {
         rememberCookies(response.headers);
+        const newSite = createdSite(request, response);
+        if (newSite) {
+          // before answering, so the dashboard opens the site with its author
+          await applyAuthor(newSite).catch((error) =>
+            console.warn("[haxcms-browser]", error),
+          );
+        }
         if (response.saveFailed) {
           // HAXcms shows its own error; the bar says why, until a later
           // change is saved
@@ -688,9 +956,15 @@
         ? 'The folder "' +
             storage.handle.name +
             '" on this computer. Each site is its own folder in it.'
-        : storage.kind === "browser"
-          ? "This browser's storage for this page. Clearing site data for this page removes it."
-          : "Nowhere: " + storage.reason,
+        : storage.kind === "cloud"
+          ? storage.label +
+            (storage.remote.provider === "webdav"
+              ? ", at " + storage.remote.webdav.url
+              : ', in the "HAXcms sites" folder HAXcms made there') +
+            ". Each site is its own folder in it."
+          : storage.kind === "browser"
+            ? "This browser's storage for this page. Clearing site data for this page removes it."
+            : "Nowhere: " + storage.reason,
     );
     if (lastBoot) {
       add("Not available here", unavailableFeatures(lastBoot.unavailable));
@@ -714,7 +988,11 @@
       root: "/haxcms",
       basePath: mount,
       origin: globalThis.location.origin,
-      storage: storage.handle ? { handle: storage.handle } : null,
+      storage: storage.remote
+        ? { remote: storage.remote }
+        : storage.handle
+          ? { handle: storage.handle }
+          : null,
     });
     // one local user, so sign in for them: HAXcms then opens signed in
     const signedIn = await send("signIn", {});
@@ -731,6 +1009,7 @@
     };
     running = true;
     publisher.show(true);
+    accounts.show(true);
     showStorage();
     showDetails();
     sharer
@@ -771,6 +1050,7 @@
   async function restart(chosen) {
     running = false;
     publisher.show(false);
+    accounts.show(false);
     sharer.hide();
     saveProblem = false;
     setStatus("Starting HAXcms in your browser…", "");
@@ -812,6 +1092,17 @@
     try {
       await boot(loaded[3]);
     } catch (error) {
+      if (loaded[3].kind === "cloud") {
+        console.warn("[haxcms-browser]", error);
+        rememberedCloud = loadCloudChoice();
+        await restart(await browserStorage());
+        notify(
+          loaded[3].label +
+            " could not be opened, so HAXcms started from this browser's storage. " +
+            String((error && error.message) || error),
+        );
+        return;
+      }
       if (loaded[3].kind !== "folder") {
         throw error;
       }

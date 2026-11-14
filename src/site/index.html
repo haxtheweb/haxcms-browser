@@ -54,6 +54,9 @@
       </p>
       <p class="bar-note" id="note" role="status"></p>
       <nav class="bar-links" aria-label="About this demo">
+        <button type="button" id="signin-button" aria-haspopup="dialog" hidden>
+          Sign in
+        </button>
         <button type="button" id="share-button" aria-haspopup="dialog" hidden>
           Shared with HAX
         </button>
@@ -63,6 +66,9 @@
         <button type="button" id="reopen-button" hidden></button>
         <button type="button" id="folder-button" hidden>
           Save to a folder
+        </button>
+        <button type="button" id="cloud-button" aria-haspopup="dialog" hidden>
+          Save to the cloud
         </button>
         <button type="button" id="browser-button" hidden>
           Stop using the folder
@@ -205,6 +211,70 @@
         </div>
       </div>
     </section>
+    <dialog class="publish" id="signin" aria-labelledby="signin-title">
+      <form method="dialog" id="signin-form">
+        <h2 id="signin-title">Sign in</h2>
+        <p class="publish-intro">
+          Sign in with an account you already have. Your name, email and picture
+          are filled in as the author of the sites you make next. HAXcms keeps
+          the sign-in in this tab only.
+        </p>
+        <p class="publish-signed-in" id="signin-current" hidden>
+          <span id="signin-current-text"></span>
+          <button type="button" id="signin-signout">Sign out</button>
+        </p>
+        <div class="provider-list" id="signin-providers"></div>
+        <p class="publish-none" id="signin-none" hidden>
+          Sign-in isn't set up on this copy of HAXcms. Whoever runs it can turn
+          providers on (see docs/providers.md in haxcms-browser).
+        </p>
+        <p class="publish-status" id="signin-status" role="status"></p>
+        <div class="publish-actions">
+          <button type="button" id="signin-close">Close</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="publish" id="cloud" aria-labelledby="cloud-title">
+      <form id="cloud-form" novalidate>
+        <h2 id="cloud-title">Save to the cloud</h2>
+        <p class="publish-intro">
+          Keep your sites in cloud storage you already have, so they aren't tied
+          to this browser. HAXcms only uses its own folder there.
+        </p>
+        <div class="provider-list" id="cloud-providers"></div>
+        <details class="cloud-webdav" id="cloud-webdav">
+          <summary>Nextcloud or another WebDAV server</summary>
+          <label for="cloud-webdav-url">WebDAV address</label>
+          <input
+            id="cloud-webdav-url"
+            type="url"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            placeholder="https://cloud.example.org/remote.php/dav/files/you/HAXcms/"
+            aria-describedby="cloud-webdav-help"
+          />
+          <label for="cloud-webdav-user">User name</label>
+          <input id="cloud-webdav-user" type="text" autocomplete="username" />
+          <label for="cloud-webdav-password">App password</label>
+          <input
+            id="cloud-webdav-password"
+            type="password"
+            autocomplete="current-password"
+          />
+          <p class="publish-help" id="cloud-webdav-help">
+            Use an app password, not your main one. The server has to allow this
+            page to reach it (for Nextcloud, the WebAppPassword app with this
+            page's address added). Kept in this tab only.
+          </p>
+          <button type="button" id="cloud-webdav-use">Use this server</button>
+        </details>
+        <p class="publish-status" id="cloud-status" role="status"></p>
+        <div class="publish-actions">
+          <button type="button" id="cloud-close">Close</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="publish" id="publish" aria-labelledby="publish-title">
       <form id="publish-form" novalidate>
         <h2 id="publish-title">Publish a site</h2>
@@ -223,79 +293,112 @@
           <label for="publish-site">Site</label>
           <select id="publish-site" required></select>
 
-          <label for="publish-domain">Address</label>
-          <div class="publish-address">
-            <span aria-hidden="true">https://</span>
+          <label for="publish-host">Publish to</label>
+          <select id="publish-host"></select>
+          <p class="publish-help" id="publish-host-about"></p>
+
+          <div class="publish-account-host" id="publish-account-host" hidden>
+            <label for="publish-name">Name</label>
             <input
-              id="publish-domain"
+              id="publish-name"
               type="text"
-              inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              required
-              aria-describedby="publish-domain-help"
+              aria-describedby="publish-name-help"
             />
+            <p class="publish-help" id="publish-name-help">
+              Used for the repository, project or site name. Publishing with the
+              same name again updates it.
+            </p>
+            <p class="publish-signed-in" id="publish-host-account">
+              <span id="publish-host-account-text"></span>
+              <button type="button" id="publish-host-signout" hidden>
+                Use another account
+              </button>
+            </p>
           </div>
-          <p class="publish-help" id="publish-domain-help">
-            Any free name ending in .surge.sh, or a domain you have pointed at
-            Surge. Publishing to the same address again replaces what is there.
-          </p>
 
-          <fieldset class="publish-auth" id="publish-auth">
-            <legend>Surge account</legend>
-            <p class="publish-signed-in" id="publish-signed-in" hidden>
-              <span id="publish-signed-in-text"></span>
-              <button type="button" id="publish-forget">Use another</button>
-            </p>
-            <div id="publish-auth-choices">
-              <label class="publish-choice">
-                <input type="radio" name="publish-auth" value="token" checked />
-                Paste a token
-              </label>
-              <label class="publish-choice">
-                <input type="radio" name="publish-auth" value="password" />
-                Email and password
-              </label>
-              <div class="publish-auth-token" id="publish-auth-token">
-                <label for="publish-token">Surge token</label>
-                <input
-                  id="publish-token"
-                  type="password"
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-describedby="publish-token-help"
-                />
-                <p class="publish-help" id="publish-token-help">
-                  Make one that only works for this address with
-                  <code id="publish-token-command"
-                    >surge tokens add --domain example.surge.sh</code
-                  >.
-                </p>
-              </div>
-              <div
-                class="publish-auth-password"
-                id="publish-auth-password"
-                hidden
-              >
-                <label for="publish-email">Email</label>
-                <input id="publish-email" type="email" autocomplete="email" />
-                <label for="publish-password">Password</label>
-                <input
-                  id="publish-password"
-                  type="password"
-                  autocomplete="current-password"
-                  aria-describedby="publish-password-help"
-                />
-                <p class="publish-help" id="publish-password-help">
-                  Sent to Surge once to get a token, and not kept. No Surge
-                  account yet? Surge makes one for this email.
-                </p>
-              </div>
+          <div class="publish-surge" id="publish-surge">
+            <label for="publish-domain">Address</label>
+            <div class="publish-address">
+              <span aria-hidden="true">https://</span>
+              <input
+                id="publish-domain"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                required
+                aria-describedby="publish-domain-help"
+              />
             </div>
-            <p class="publish-help">
-              Kept in this tab only, until you close it.
+            <p class="publish-help" id="publish-domain-help">
+              Any free name ending in .surge.sh, or a domain you have pointed at
+              Surge. Publishing to the same address again replaces what is
+              there.
             </p>
-          </fieldset>
+
+            <fieldset class="publish-auth" id="publish-auth">
+              <legend>Surge account</legend>
+              <p class="publish-signed-in" id="publish-signed-in" hidden>
+                <span id="publish-signed-in-text"></span>
+                <button type="button" id="publish-forget">Use another</button>
+              </p>
+              <div id="publish-auth-choices">
+                <label class="publish-choice">
+                  <input
+                    type="radio"
+                    name="publish-auth"
+                    value="token"
+                    checked
+                  />
+                  Paste a token
+                </label>
+                <label class="publish-choice">
+                  <input type="radio" name="publish-auth" value="password" />
+                  Email and password
+                </label>
+                <div class="publish-auth-token" id="publish-auth-token">
+                  <label for="publish-token">Surge token</label>
+                  <input
+                    id="publish-token"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="publish-token-help"
+                  />
+                  <p class="publish-help" id="publish-token-help">
+                    Make one that only works for this address with
+                    <code id="publish-token-command"
+                      >surge tokens add --domain example.surge.sh</code
+                    >.
+                  </p>
+                </div>
+                <div
+                  class="publish-auth-password"
+                  id="publish-auth-password"
+                  hidden
+                >
+                  <label for="publish-email">Email</label>
+                  <input id="publish-email" type="email" autocomplete="email" />
+                  <label for="publish-password">Password</label>
+                  <input
+                    id="publish-password"
+                    type="password"
+                    autocomplete="current-password"
+                    aria-describedby="publish-password-help"
+                  />
+                  <p class="publish-help" id="publish-password-help">
+                    Sent to Surge once to get a token, and not kept. No Surge
+                    account yet? Surge makes one for this email.
+                  </p>
+                </div>
+              </div>
+              <p class="publish-help">
+                Kept in this tab only, until you close it.
+              </p>
+            </fieldset>
+          </div>
         </div>
         <p class="publish-status" id="publish-status" role="status"></p>
         <div class="publish-actions">
@@ -345,7 +448,10 @@
       <div class="message" id="message" hidden></div>
       <iframe id="app" title="HAXcms" hidden></iframe>
     </main>
+    <script src="./auth.js"></script>
+    <script src="./publish-hosts.js"></script>
     <script src="./publish.js"></script>
+    <script src="./accounts.js"></script>
     <script src="./offline.js"></script>
     <script src="./share.js"></script>
     <script src="./shell.js"></script>

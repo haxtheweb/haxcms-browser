@@ -141,8 +141,49 @@ function basic(user, pass) {
   return "Basic " + Buffer.from(user + ":" + pass, "utf8").toString("base64");
 }
 
+// The page's sign-in landing address on an allowed origin
+// (src/site/oauth/callback.html), or null: the one redirect_uri the broker
+// will finish a sign-in for.
+function validRedirect(req, value) {
+  if (typeof value !== "string" || value.length > 2048) {
+    return null;
+  }
+  let target;
+  try {
+    target = new URL(value);
+  } catch (e) {
+    return null;
+  }
+  if (
+    allowedOrigins(req).indexOf(target.origin) === -1 ||
+    !/\/oauth\/callback\.html$/.test(target.pathname) ||
+    target.search ||
+    target.hash ||
+    target.username ||
+    target.password
+  ) {
+    return null;
+  }
+  return target.href;
+}
+
+// Read a small JSON body; null when it isn't one.
+async function readJson(req, limit) {
+  try {
+    const value = JSON.parse(
+      (await readBody(req, limit || 16 * 1024)).toString("utf8"),
+    );
+    return value && typeof value === "object" ? value : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   MAX_BODY_BYTES,
+  allowedOrigins,
+  validRedirect,
+  readJson,
   originAllowed,
   sendJson,
   refuse,

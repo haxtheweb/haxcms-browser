@@ -13,13 +13,19 @@
  * is gone when the tab closes. The address last used for each site is
  * remembered in this browser (localStorage) as a convenience.
  *
- * shell.js creates this with HaxcmsPublish({ send, isRunning }), where send
- * talks to the Worker.
+ * Other hosts (GitHub Pages, GitLab Pages, Codeberg Pages, Netlify,
+ * Vercel) are offered when the broker has their sign-in set up: the page
+ * signs in through auth.js and publishes straight to them from the browser
+ * (publish-hosts.js), with no size limit of ours.
+ *
+ * shell.js creates this with HaxcmsPublish({ send, isRunning, auth }),
+ * where send talks to the Worker and auth is HaxcmsAuth.
  */
 (function () {
   "use strict";
 
   const DOMAIN_KEY = "haxcms-browser:publish-domains";
+  const HOST_KEY = "haxcms-browser:publish-hosts";
 
   function byId(id) {
     return document.getElementById(id);
@@ -143,9 +149,42 @@
     return fallback + " (" + response.status + ")";
   }
 
+  // per site: the host last published to and the name used there
+  function rememberedHosts() {
+    try {
+      const value = JSON.parse(
+        globalThis.localStorage.getItem(HOST_KEY) || "{}",
+      );
+      return value && typeof value === "object" ? value : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function rememberHost(site, host, name) {
+    try {
+      const all = rememberedHosts();
+      all[site] = { host, name };
+      globalThis.localStorage.setItem(HOST_KEY, JSON.stringify(all));
+    } catch (e) {
+      // only a convenience
+    }
+  }
+
+  function safeHttpsUrl(value) {
+    try {
+      const url = new URL(String(value));
+      return url.protocol === "https:" ? url.href : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   globalThis.HaxcmsPublish = function HaxcmsPublish(options) {
     const send = options.send;
     const isRunning = options.isRunning;
+    const auth = options.auth;
+    const hostsApi = globalThis.HaxcmsPublishHosts;
 
     const button = byId("publish-button");
     const dialog = byId("publish");
@@ -168,6 +207,15 @@
     const limit = byId("publish-limit");
     const submit = byId("publish-submit");
     const cancel = byId("publish-cancel");
+    const hostSelect = byId("publish-host");
+    const hostAbout = byId("publish-host-about");
+    const surgePart = byId("publish-surge");
+    const accountPart = byId("publish-account-host");
+    const nameInput = byId("publish-name");
+    const hostAccountText = byId("publish-host-account-text");
+    const hostSignOut = byId("publish-host-signout");
+    // the hosts this page can publish to now: [{ id, label, about, provider }]
+    let hosts = [];
 
     // the broker on this deployment, if there is one
     const brokerBase = new URL("/api/", globalThis.location.origin);
@@ -211,6 +259,8 @@
       siteSelect.disabled = value;
       domainInput.disabled = value;
       cancel.disabled = value;
+      hostSelect.disabled = value;
+      nameInput.disabled = value;
       submit.textContent = value ? "Publishing…" : "Publish";
     }
 
@@ -225,6 +275,47 @@
         cleanDomain(site.domain) ||
         suggestDomain(site.name);
       showTokenCommand();
+    }
+
+    function currentHost() {
+      return hosts.find((host) => host.id === hostSelect.value) || null;
+    }
+
+    function showHostAccount() {
+      const host = currentHost();
+      if (!host || host.id === "surge") {
+        return;
+      }
+      const session = auth.session(host.provider);
+      const profile = session && session.profile;
+      hostAccountText.textContent = session
+        ? "Publishing as " +
+          ((profile && (profile.login || profile.name)) || "your account") +
+          " on " +
+          auth.label(host.provider) +
+          "."
+        : "You'll be asked to sign in to " +
+          auth.label(host.provider) +
+          " when you publish.";
+      hostSignOut.hidden = !session;
+    }
+
+    function chooseHost() {
+      const host = currentHost();
+      const isSurge = !host || host.id === "surge";
+      surgePart.hidden = !isSurge;
+      accountPart.hidden = isSurge;
+      limit.hidden = !(isSurge && broker && broker.maxBytes);
+      hostAbout.textContent = host ? host.about : "";
+      if (!isSurge) {
+        const remembered = rememberedHosts()[siteSelect.value];
+        nameInput.value =
+          remembered && remembered.host === host.id && remembered.name
+            ? remembered.name
+            : hostsApi.slugName(siteSelect.value);
+        showHostAccount();
+      }
+      setStatus("", "");
     }
 
     // asked each time the dialog opens: the answer is small, and a broker
@@ -248,8 +339,43 @@
     async function open() {
       setStatus("", "");
       const found = await checkBroker();
-      none.hidden = !!found;
-      fields.hidden = !found;
+      const providers = auth ? await auth.list() : [];
+      hosts = [];
+      if (found) {
+        hosts.push({
+          id: "surge",
+          label: "Surge",
+          about:
+            "Free, at an address you pick ending in .surge.sh. Goes through this HAXcms's publish service.",
+        });
+      }
+      for (const provider of providers) {
+        if (
+          provider.uses.indexOf("publish") !== -1 &&
+          hostsApi &&
+          Object.prototype.hasOwnProperty.call(hostsApi.HOSTS, provider.id)
+        ) {
+          const host = hostsApi.HOSTS[provider.id];
+          hosts.push({
+            id: provider.id,
+            label: host.label,
+            about: host.about,
+            provider: host.provider,
+            installUrl: provider.installUrl || "",
+          });
+        }
+      }
+      const previousHost = hostSelect.value;
+      hostSelect.textContent = "";
+      for (const host of hosts) {
+        const option = document.createElement("option");
+        option.value = host.id;
+        option.textContent = host.label;
+        hostSelect.append(option);
+      }
+      const available = hosts.length > 0;
+      none.hidden = available;
+      fields.hidden = !available;
       limit.hidden = !(found && found.maxBytes);
       if (found && found.maxBytes) {
         limit.textContent =
@@ -257,8 +383,8 @@
           formatBytes(found.maxBytes) +
           " once packed (text, pages and a few images). For bigger sites, use Download site in the dashboard and publish with the HAX CLI, which has no size limit.";
       }
-      submit.hidden = !found;
-      if (found) {
+      submit.hidden = !available;
+      if (available) {
         try {
           sites = await send("listSites", {});
         } catch (e) {
@@ -287,11 +413,20 @@
           );
         } else {
           chooseSite();
+          const remembered = rememberedHosts()[siteSelect.value];
+          const pick =
+            (remembered && hosts.some((h) => h.id === remembered.host)
+              ? remembered.host
+              : "") ||
+            (hosts.some((h) => h.id === previousHost) ? previousHost : "") ||
+            hosts[0].id;
+          hostSelect.value = pick;
+          chooseHost();
         }
         showAuth();
       }
       dialog.showModal();
-      (found && sites.length ? siteSelect : cancel).focus();
+      (available && sites.length ? siteSelect : cancel).focus();
     }
 
     async function getToken() {
@@ -390,9 +525,88 @@
       }
     }
 
+    // publish to a host that signs in (publish-hosts.js)
+    async function publishToHost(host) {
+      const site = siteSelect.value;
+      const name = nameInput.value.trim();
+      if (!site) {
+        setStatus("Pick a site to publish.", "error");
+        siteSelect.focus();
+        return;
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) {
+        setStatus(
+          "Enter a name with letters, numbers, dots, dashes or underscores.",
+          "error",
+        );
+        nameInput.focus();
+        return;
+      }
+      // the sign-in popup has to open straight from the click, before any
+      // waiting, or the browser blocks it
+      const signingIn = auth.signedIn(host.provider)
+        ? null
+        : auth.signIn(host.provider);
+      setBusy(true);
+      try {
+        if (signingIn) {
+          setStatus("Signing in to " + auth.label(host.provider) + "…", "busy");
+          await signingIn;
+          showHostAccount();
+        }
+        setStatus("Gathering the files of " + site + "…", "busy");
+        const gathered = await send("siteFiles", { name: site });
+        const result = await hostsApi.publish(host.id, {
+          auth,
+          name,
+          files: gathered.files,
+          status: (text) => setStatus(text, "busy"),
+        });
+        rememberHost(site, host.id, name);
+        status.textContent = "";
+        status.dataset.state = "ready";
+        const href = safeHttpsUrl(result.url);
+        if (href) {
+          const link = document.createElement("a");
+          link.href = href;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = href;
+          status.append("Published. Your site will be at ", link, ". ");
+        } else {
+          status.append("Published. ");
+        }
+        if (result.note) {
+          status.append(result.note);
+        }
+      } catch (error) {
+        setStatus(String((error && error.message) || error), "error");
+        const installUrl = safeHttpsUrl(host.installUrl);
+        if (error && error.action === "install-github-app" && installUrl) {
+          const link = document.createElement("a");
+          link.href = installUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "Install the HAX app on GitHub";
+          status.append(" ", link);
+        }
+      } finally {
+        setBusy(false);
+        showHostAccount();
+      }
+    }
+
     async function publish(event) {
       event.preventDefault();
-      if (busy || !broker) {
+      const host = currentHost();
+      if (busy || !host) {
+        return;
+      }
+      if (host.id !== "surge") {
+        publishToHost(host);
+        return;
+      }
+      if (!broker) {
         return;
       }
       const site = siteSelect.value;
@@ -455,7 +669,18 @@
         showAuth();
       }
     });
-    siteSelect.addEventListener("change", chooseSite);
+    siteSelect.addEventListener("change", () => {
+      chooseSite();
+      chooseHost();
+    });
+    hostSelect.addEventListener("change", chooseHost);
+    hostSignOut.addEventListener("click", () => {
+      const host = currentHost();
+      if (host && host.provider) {
+        auth.signOut(host.provider);
+        showHostAccount();
+      }
+    });
     domainInput.addEventListener("input", showTokenCommand);
     forget.addEventListener("click", () => {
       surge = null;
