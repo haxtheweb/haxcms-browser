@@ -209,6 +209,57 @@ body {
   outline: 2px solid var(--bar-fg);
   outline-offset: 2px;
 }
+/* Install and work offline: its own block under About this session. */
+.details h2.details-app-title {
+  margin-top: 24px;
+}
+.details-app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--details-line);
+  border-radius: 6px;
+  background: var(--details-tile);
+}
+.details-app [hidden] {
+  display: none;
+}
+.details-app p:empty {
+  display: none;
+}
+.details-app progress {
+  width: 100%;
+  accent-color: var(--bar-link);
+}
+.details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.details-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--bar-link);
+  border-radius: 4px;
+  background: none;
+  color: var(--bar-link);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.details-actions button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.details-actions button:focus-visible {
+  outline: 2px solid var(--bar-fg);
+  outline-offset: 2px;
+}
+.details p.details-help {
+  color: var(--details-muted);
+  font-size: 13px;
+}
 @media (max-width: 800px) {
   .details-inner {
     grid-template-columns: minmax(0, 1fr);
@@ -408,6 +459,95 @@ body {
   .publish-auth,
   .publish button {
     border: 1px solid CanvasText;
+  }
+}
+/* Shared with HAX: the Publish dialog's look, plus the list of what came. */
+.share-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px 8px 28px;
+  border-radius: 4px;
+  background: var(--details-tile);
+  overflow-wrap: anywhere;
+}
+.share-items:empty {
+  display: none;
+}
+.share .publish-actions {
+  flex-wrap: wrap;
+}
+#share-descriptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#share-descriptions label {
+  margin-top: 6px;
+}
+/* A notice with something to do about it, over the corner of the page. */
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid var(--details-line);
+  border-radius: 8px;
+  background: var(--details-bg);
+  color: var(--bar-fg);
+  box-shadow: 0 6px 24px #0008;
+}
+.toast[hidden],
+.toast [hidden] {
+  display: none;
+}
+.toast p {
+  margin: 0;
+}
+.toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.toast button {
+  padding: 6px 14px;
+  border: 1px solid var(--bar-link);
+  border-radius: 4px;
+  background: none;
+  color: var(--bar-link);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.toast button.primary {
+  background: var(--bar-link);
+  color: var(--bar-bg);
+}
+.toast button:focus-visible {
+  outline: 2px solid var(--bar-fg);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .toast,
+  .toast button,
+  .details-app,
+  .details-actions button {
+    border: 1px solid CanvasText;
+  }
+}
+/* Installed, the app has no browser bar above it: keep clear of the notch. */
+@media (display-mode: standalone) {
+  .bar {
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
 }
 /* Sign in and Save to the cloud: provider choices, in the Publish dialog's colors. */

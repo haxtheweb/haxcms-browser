@@ -14,7 +14,12 @@
  *   a HAXcms page opened in its own tab
  *       -> wrapped in the host page's status bar, with the page in a frame
  *   the host page's own files (index.html, the Worker bundle, ...)
- *       -> not touched
+ *       -> fetched from the web server as they are, unless this browser has
+ *          an offline copy (below)
+ *   something shared to the installed app from another app (POST <scope>share)
+ *       -> held in this browser until the host page asks what to do with it
+ *   reset.html
+ *       -> never handled here, so it always comes from the web server
  *
  * A service worker cannot talk to a page's Worker directly, and each open
  * host page has its own Worker (its own in-memory sites). So a request is
@@ -27,8 +32,23 @@
  * - Navigations are relayed for GET only. A write (POST, PUT, PATCH, DELETE)
  *   is relayed only when it comes from a page inside the session's mount,
  *   so another site cannot submit a form into a running session.
- * - Nothing is cached here and nothing leaves the browser: relayed requests
- *   never reach the network.
+ * - Nothing leaves the browser: relayed requests never reach the network, and
+ *   their answers are never stored.
+ *
+ * The offline copy (src/site/offline.js saves it; this file only reads it).
+ * - There is no copy until the person installs the app or asks for offline
+ *   use. Without one, every static file comes from the web server, exactly as
+ *   if this file did no caching at all.
+ * - A copy is one whole build of the site, saved by the host page. Nothing
+ *   is added to it file by file as pages load, so it can never be a mix of
+ *   two builds.
+ * - With a copy, the host page and the front end are served from it, so the
+ *   app starts with no connection and its parts always match each other.
+ *   The host page then checks the web server for a newer build and offers to
+ *   update. A file the copy does not have comes from the web server.
+ * - Getting out is always possible: reset.html is never handled here, a
+ *   failure while reading the copy falls back to the web server, and a
+ *   change of OFFLINE_FORMAT makes every browser drop its copy.
  */
 const SCOPE = new URL(self.registration.scope).pathname;
 const APP = SCOPE + "app/";
@@ -42,11 +62,31 @@ const HOST_FILES = [
   "shell.js",
   "shell.css",
   "frame.js",
+  "offline.js",
+  "share.js",
+  "publish.js",
+  "publish-hosts.js",
+  "auth.js",
+  "accounts.js",
+  "oauth/callback.html",
+  "oauth/callback.js",
   "sw.js",
   "haxcms-worker.js",
   "haxcms-snapshot.json",
   "version.json",
+  "manifest.webmanifest",
+  "icon-192.png",
+  "icon-512.png",
+  "icon-maskable-512.png",
+  "apple-touch-icon.png",
 ];
+// always from the web server, whatever this file is doing: the way out
+// (reset.html), and the lists an offline copy is checked against
+const RESET_PAGE = SCOPE + "reset.html";
+const ALWAYS_NETWORK = [SCOPE + "offline-manifest.json"];
+const ALWAYS_NETWORK_FOLDER = SCOPE + "offline-locales/";
+// where another app's share lands when HAX is installed (manifest.webmanifest)
+const SHARE_TARGET = SCOPE + "share";
 
 function isHostFile(pathname) {
   if (pathname.indexOf(SCOPE) !== 0) {
@@ -54,6 +94,165 @@ function isHostFile(pathname) {
   }
   const rest = pathname.slice(SCOPE.length);
   return HOST_FILES.indexOf(rest) !== -1 || rest.indexOf("public/") === 0;
+}
+
+// --- the offline copy ----------------------------------------------------
+// Names and layout are shared with offline.js and reset.html. The scope is
+// part of the name because other sites on this origin (GitHub Pages) share
+// the same cache storage.
+const OFFLINE_FORMAT = 1;
+const OFFLINE_ALL = "haxcms-browser-offline:";
+const OFFLINE_PREFIX = OFFLINE_ALL + OFFLINE_FORMAT + ":" + SCOPE + ":";
+// written last when a copy is saved: a cache without it is not a copy
+const OFFLINE_META = self.location.origin + SCOPE + "__offline/meta.json";
+
+// which cache holds the copy, or null; looked up once and kept until the
+// host page says the copy changed
+let offlineLookup = null;
+
+async function findOfflineCopy() {
+  const names = await caches.keys();
+  let best = null;
+  for (const name of names) {
+    if (name.indexOf(OFFLINE_PREFIX) !== 0) {
+      continue;
+    }
+    const cache = await caches.open(name);
+    const saved = await cache.match(OFFLINE_META);
+    const meta = saved ? await saved.json().catch(() => null) : null;
+    if (meta && (!best || String(meta.savedAt) > String(best.meta.savedAt))) {
+      best = { cache, meta };
+    }
+  }
+  return best;
+}
+
+function offlineCopy() {
+  if (!offlineLookup) {
+    offlineLookup = findOfflineCopy().catch(() => null);
+  }
+  return offlineLookup;
+}
+
+// A static file by its address on the web server: from the offline copy
+// when there is one and it has the file, otherwise from the web server.
+// Anything that goes wrong on the way to the copy ends at the web server.
+// A request marked no-store is the host page asking for the web server's
+// own file (that is how it saves and updates the copy), so it skips the copy.
+async function staticFetch(address, request) {
+  if (request && request.cache === "no-store") {
+    return fetch(request);
+  }
+  let saved = null;
+  try {
+    const copy = await offlineCopy();
+    if (copy) {
+      saved = await copy.cache.match(address);
+    }
+  } catch (e) {
+    saved = null;
+  }
+  return saved || fetch(request || address);
+}
+
+// the host page is one file whatever follows the "?" (./?share=...)
+function hostFileAddress(pathname) {
+  const rest = pathname.slice(SCOPE.length);
+  return self.location.origin + SCOPE + (rest === "" ? "index.html" : rest);
+}
+
+// --- things shared to the installed app -----------------------------------
+// Another app's share arrives as a form post. It is put in this browser's
+// storage and the host page is opened, which shows what arrived and asks
+// which site it is for. Nothing is added to a site here. Limits keep a
+// page that posts to this address on its own from filling the browser up.
+const SHARE_CACHE = "haxcms-browser-share:" + SCOPE;
+const SHARE_BASE = self.location.origin + SCOPE + "__share/";
+const SHARE_MAX_FILES = 10;
+const SHARE_MAX_BYTES = 200 * 1024 * 1024;
+const SHARE_MAX_TEXT = 20000;
+const SHARE_KEEP = 5;
+
+function shareText(form, name) {
+  const value = form.get(name);
+  return typeof value === "string" ? value.slice(0, SHARE_MAX_TEXT) : "";
+}
+
+async function receiveShare(request) {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  try {
+    const form = await request.formData();
+    const cache = await caches.open(SHARE_CACHE);
+    const files = [];
+    let bytes = 0;
+    for (const file of form.getAll("files")) {
+      if (typeof file === "string" || files.length >= SHARE_MAX_FILES) {
+        continue;
+      }
+      bytes += file.size;
+      if (bytes > SHARE_MAX_BYTES) {
+        break;
+      }
+      const key = SHARE_BASE + id + "/file/" + files.length;
+      await cache.put(
+        key,
+        new Response(file, {
+          headers: {
+            "content-type": file.type || "application/octet-stream",
+          },
+        }),
+      );
+      files.push({
+        name: String(file.name || "file").slice(0, 200),
+        type: file.type || "",
+        size: file.size,
+        key,
+      });
+    }
+    const item = {
+      id,
+      when: Date.now(),
+      title: shareText(form, "title"),
+      text: shareText(form, "text"),
+      url: shareText(form, "url"),
+      files,
+    };
+    if (item.title || item.text || item.url || files.length) {
+      await cache.put(
+        SHARE_BASE + id + "/item.json",
+        new Response(JSON.stringify(item), {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await pruneShares(cache);
+    }
+  } catch (e) {
+    // not a share this can read: just open the app
+  }
+  return Response.redirect(SCOPE + "?share=" + id, 303);
+}
+
+// keep the newest few shares; drop the rest with their files
+async function pruneShares(cache) {
+  const items = [];
+  for (const request of await cache.keys()) {
+    if (/\/item\.json$/.test(request.url)) {
+      const saved = await cache.match(request);
+      const item = saved ? await saved.json().catch(() => null) : null;
+      if (item) {
+        items.push(item);
+      }
+    }
+  }
+  items.sort((a, b) => b.when - a.when);
+  for (const item of items.slice(SHARE_KEEP)) {
+    for (const file of item.files || []) {
+      await cache.delete(file.key);
+    }
+    await cache.delete(SHARE_BASE + item.id + "/item.json");
+  }
 }
 // a host page that owns the session answers "got it" at once; the real
 // response can take as long as the work does (creating a site, an import)
@@ -73,7 +272,31 @@ self.addEventListener("install", () => {
   self.skipWaiting();
 });
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      // offline copies saved in a layout this file no longer reads
+      for (const name of await caches.keys()) {
+        if (
+          name.indexOf(OFFLINE_ALL) === 0 &&
+          name.indexOf(":" + SCOPE + ":") !== -1 &&
+          name.indexOf(OFFLINE_PREFIX) !== 0
+        ) {
+          await caches.delete(name);
+        }
+      }
+      await self.clients.claim();
+    })(),
+  );
+});
+// the host page saved, updated or removed the offline copy
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type === "haxcms-offline-changed") {
+    offlineLookup = null;
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({ ok: true });
+    }
+  }
 });
 
 // "/haxcms-browser/app/k3j2/_sites/x/" -> { session: "k3j2", path: "/_sites/x/" }
@@ -154,7 +377,7 @@ const CODE_EDITOR_OWN_ADDRESS =
 // its real URL (<scope>public/...) would make the browser resolve the
 // module's own imports there, and load modules twice under two addresses.
 async function staticFile(path) {
-  const response = await fetch(STATIC + path);
+  const response = await staticFetch(self.location.origin + STATIC + path);
   let body = response.body;
   if (response.ok && path.slice(-CODE_EDITOR.length) === CODE_EDITOR) {
     body = (await response.text())
@@ -396,7 +619,24 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
+  if (
+    url.pathname === RESET_PAGE ||
+    ALWAYS_NETWORK.indexOf(url.pathname) !== -1 ||
+    url.pathname.indexOf(ALWAYS_NETWORK_FOLDER) === 0
+  ) {
+    return;
+  }
+  if (url.pathname === SHARE_TARGET && event.request.method === "POST") {
+    event.respondWith(receiveShare(event.request));
+    return;
+  }
   if (isHostFile(url.pathname)) {
+    if (event.request.method !== "GET" || url.pathname === SCOPE + "sw.js") {
+      return;
+    }
+    event.respondWith(
+      staticFetch(hostFileAddress(url.pathname), event.request),
+    );
     return;
   }
   event.respondWith(

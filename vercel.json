@@ -8,7 +8,16 @@
   "trailingSlash": false,
   "headers": [
     {
-      "source": "/sw.js",
+      "source": "/(sw.js|reset.html|offline-manifest.json)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/offline-locales/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

@@ -1,0 +1,49 @@
+{
+  "name": "HAX",
+  "short_name": "HAX",
+  "description": "Make and manage HAX sites in your browser. Nothing to install on a server, and it works without a connection.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#0c2a4a",
+  "background_color": "#0c2a4a",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "image/*",
+            "video/*",
+            "audio/*",
+            "application/pdf",
+            "text/plain",
+            "text/csv",
+            "text/vtt",
+            ".vtt",
+            ".pdf",
+            ".csv"
+          ]
+        }
+      ]
+    }
+  }
+}
