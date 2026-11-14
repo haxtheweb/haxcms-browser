@@ -25,6 +25,11 @@
  * - Sites are not part of the copy and are never touched by saving,
  *   updating or removing it.
  *
+ * Installing is offered once in a notice when the browser says the page can
+ * be installed (Chromium), or with how to do it on iPhone and iPad. "Not
+ * now" is remembered in this browser for two weeks; the Install button
+ * under Details stays.
+ *
  * shell.js creates this with HaxcmsOffline({ toast }) and calls start().
  */
 (function () {
@@ -274,6 +279,25 @@
     );
   }
 
+  // "Not now" on the install offer, remembered in this browser
+  const OFFER_KEY = "haxcms-browser:install-offer-dismissed";
+  const OFFER_QUIET_MS = 14 * 24 * 60 * 60 * 1000;
+  function offerDismissedRecently() {
+    try {
+      const when = Number(globalThis.localStorage.getItem(OFFER_KEY));
+      return !!when && Date.now() - when < OFFER_QUIET_MS;
+    } catch (e) {
+      return false;
+    }
+  }
+  function dismissOffer() {
+    try {
+      globalThis.localStorage.setItem(OFFER_KEY, String(Date.now()));
+    } catch (e) {
+      // storage can be off; the offer then comes back next time
+    }
+  }
+
   function isAppleTouch() {
     return (
       /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -299,6 +323,37 @@
     let installPrompt = null;
     let lastCheck = 0;
     let offered = ""; // the build the update notice was last shown for
+    let installOffered = false; // the install notice was shown this load
+
+    // Offer to install, once per load, unless another notice is up (an
+    // update notice matters more) or the person said not now recently.
+    function offerInstall() {
+      if (
+        installOffered ||
+        isInstalled() ||
+        offerDismissedRecently() ||
+        !byId("toast").hidden
+      ) {
+        return;
+      }
+      if (installPrompt) {
+        installOffered = true;
+        toast({
+          text: "Install HAX as an app? It opens in its own window, works without a connection, and the browser keeps your sites safe.",
+          action: "Install",
+          run: () => installButton.click(),
+          dismiss: "Not now",
+          onDismiss: dismissOffer,
+        });
+      } else if (isAppleTouch() && supported) {
+        installOffered = true;
+        toast({
+          text: "Install HAX as an app: tap Share, then Add to Home Screen. It then works without a connection and keeps your sites safe.",
+          dismiss: "Got it",
+          onDismiss: dismissOffer,
+        });
+      }
+    }
 
     function show(text) {
       state.textContent = text;
@@ -464,11 +519,13 @@
         prompt.prompt();
       }
     });
-    // Chromium offers install through this event; keep it for the button
+    // Chromium says the page can be installed with this event. It is kept
+    // for the notice and the button, which replace the browser's own banner.
     globalThis.addEventListener("beforeinstallprompt", (event) => {
       event.preventDefault();
       installPrompt = event;
       render();
+      offerInstall();
     });
     // installed: an app is expected to open without a connection
     globalThis.addEventListener("appinstalled", () => {
@@ -502,6 +559,7 @@
         } else {
           check(true);
         }
+        offerInstall();
       },
       // for the details panel and tests
       state: () => ({ copy, newer, busy }),
