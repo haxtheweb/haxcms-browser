@@ -24,7 +24,7 @@ What you see when you open the demo comes from two places, and they are tested i
 - The Details button states whether its panel is open (`aria-expanded`, `aria-controls`).
 - Visible `:focus-visible` outlines, light and dark color schemes that follow the system setting, and a `forced-colors` style for Windows High Contrast.
 - No animation or timed content.
-- Checked in November 2026 with axe (WCAG 2.0 / 2.1 A and AA rules) in light and dark: no violations on the host page.
+- Every pull request runs axe (WCAG 2.0 / 2.1 A and AA rules) on the host page in light and dark, with the Details panel closed and open (`test/a11y.test.mjs`); a violation fails the build.
 
 ### The dashboard and editor
 
@@ -34,7 +34,6 @@ The demo shows whatever build of those elements haxcms-nodejs `main` ships, so a
 
 ## Known Limitations
 
-- **No automated accessibility test runs in this repository yet.** The host page was checked by hand with axe; a regression would not be caught by CI today.
 - **The same axe check found two critical issues in the dashboard** (the starter cards were marked up as a grid without rows). They are fixed in `haxtheweb/webcomponents` and reach this demo with the next HAX release build.
 - **"Save to a folder" needs the File System Access API**, which only Chromium-based browsers provide. Other browsers save sites in browser storage instead; the bar always says which is in use.
 - **Screen reader testing of the host page has not been recorded.** Reports from NVDA, JAWS, VoiceOver and TalkBack users are welcome.

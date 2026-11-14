@@ -7,6 +7,11 @@
       "reason": "PSF-2.0 is a permissive license compatible with Apache-2.0. Dev-only (via the tooling tree) and not in the Worker bundle (scripts/bundle-license-check.mjs)."
     },
     {
+      "name": "axe-core",
+      "license": "MPL-2.0",
+      "reason": "Test-only: test/a11y.test.mjs loads it into the host page to check accessibility. Used unmodified, never part of the Worker bundle or the published site (scripts/bundle-license-check.mjs)."
+    },
+    {
       "name": "@img/sharp-libvips-darwin-arm64",
       "license": "LGPL-3.0-or-later",
       "reason": "Comes in through @haxtheweb/haxcms-nodejs (sharp) as a build input. sharp is replaced with a stub in the Worker bundle (scripts/build.mjs), so libvips is never shipped; scripts/bundle-license-check.mjs enforces this."
