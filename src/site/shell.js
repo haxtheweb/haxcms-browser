@@ -16,6 +16,9 @@
  *   nowhere (memory only)       when neither is possible; gone on reload
  * The Worker loads the sites from there on start and writes every change
  * back before it answers the request that made it (see runtime/worker.cjs).
+ *
+ * Publish (publish.js) puts a site on the web through this deployment's
+ * publish broker (api/), when it has one.
  */
 (function () {
   "use strict";
@@ -53,6 +56,10 @@
   let snapshot = null;
   let version = {};
   let running = false;
+  const publisher = globalThis.HaxcmsPublish({
+    send,
+    isRunning: () => running,
+  });
   // the last change could not be written to storage
   let saveProblem = false;
 
@@ -63,6 +70,7 @@
 
   function fail(title, error) {
     running = false;
+    publisher.show(false);
     setStatus("HAXcms could not start", "error");
     frame.hidden = true;
     message.hidden = false;
@@ -578,6 +586,7 @@
       seconds: ((performance.now() - began) / 1000).toFixed(1),
     };
     running = true;
+    publisher.show(true);
     showStorage();
     showDetails();
     message.hidden = true;
@@ -614,6 +623,7 @@
 
   async function restart(chosen) {
     running = false;
+    publisher.show(false);
     saveProblem = false;
     setStatus("Starting HAXcms in your browser…", "");
     await emptyFrame();

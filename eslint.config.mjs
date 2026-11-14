@@ -93,6 +93,24 @@ export default [
     languageOptions: { sourceType: "module" },
   },
   {
+    // the publish broker: CommonJS Vercel functions on Node (api/_lib/broker.js)
+    files: ["api/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-restricted-syntax": restricted,
+      "no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", caughtErrors: "none" },
+      ],
+      eqeqeq: "error",
+      "no-var": "error",
+    },
+  },
+  {
     // the host page and its service worker: plain scripts, served as they are
     files: ["src/site/**/*.js"],
     languageOptions: {

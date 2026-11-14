@@ -9,12 +9,15 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import http from "node:http";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { startPagesServer } from "./helpers/pages-server.mjs";
+import { redirectSurge } from "./helpers/surge-stand-in.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = "smoke-site";
@@ -759,6 +762,141 @@ test("HAXcms's own Download site gives a zip of the site", async () => {
   assert.equal(result.name, SITE + ".zip");
   assert.equal(result.signature, "PK");
   assert.ok(result.bytes > 1000, "zip has content: " + result.bytes);
+});
+
+// ---- publishing (haxtheweb/issues#3341) --------------------------------
+
+test("without a publish broker, Publish points to Download site and the CLI", async () => {
+  await host.bringToFront();
+  await host.click("#publish-button");
+  await host.waitForFunction(() => document.getElementById("publish").open, {
+    timeout: 10000,
+  });
+  const shown = await host.evaluate(() => ({
+    none: !document.getElementById("publish-none").hidden,
+    fields: !document.getElementById("publish-fields").hidden,
+    submit: !document.getElementById("publish-submit").hidden,
+  }));
+  assert.deepEqual(shown, { none: true, fields: false, submit: false });
+  await host.click("#publish-cancel");
+  assert.equal(
+    await host.evaluate(() => document.getElementById("publish").open),
+    false,
+  );
+});
+
+test("Publish packs the site and sends it through the broker to Surge", async () => {
+  const require = createRequire(import.meta.url);
+  // a stand-in for the Surge API
+  const received = [];
+  const surge = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      received.push({
+        method: req.method,
+        url: req.url,
+        authorization: req.headers.authorization,
+        body: Buffer.concat(chunks),
+      });
+      res.setHeader("content-type", "application/x-ndjson");
+      res.end('{"type":"progress"}\n{"type":"info"}\n');
+    });
+  });
+  await new Promise((resolve) => surge.listen(0, "127.0.0.1", resolve));
+  const restoreFetch = redirectSurge(
+    "http://127.0.0.1:" + surge.address().port,
+  );
+  const routes = {
+    "/api/status": require("../api/status.js"),
+    "/api/surge/token": require("../api/surge/token.js"),
+    "/api/surge/deploy": require("../api/surge/deploy.js"),
+  };
+  server.setApi((req, res) => {
+    const route = routes[new URL(req.url, "http://x").pathname];
+    if (!route) {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    Promise.resolve(route(req, res)).catch((e) => {
+      res.statusCode = 500;
+      res.end(String(e));
+    });
+  });
+  const unpacked = fs.mkdtempSync(path.join(os.tmpdir(), "haxcms-publish-"));
+  try {
+    await host.bringToFront();
+    await host.click("#publish-button");
+    await host.waitForFunction(
+      (site) =>
+        document.getElementById("publish").open &&
+        !document.getElementById("publish-fields").hidden &&
+        Array.from(document.querySelectorAll("#publish-site option")).some(
+          (option) => option.value === site,
+        ),
+      { timeout: 15000 },
+      SITE,
+    );
+    await host.select("#publish-site", SITE);
+    // a first publish suggests a free address made from the site's name
+    assert.match(
+      await host.$eval("#publish-domain", (el) => el.value),
+      new RegExp("^" + SITE + "-[0-9a-f]{6}\\.surge\\.sh$"),
+    );
+    await host.$eval("#publish-domain", (el) => {
+      el.value = "smoke-test.surge.sh";
+    });
+    await host.type("#publish-token", "token0123456789");
+    await host.click("#publish-submit");
+    await host.waitForFunction(
+      () =>
+        ["ready", "error"].includes(
+          document.getElementById("publish-status").dataset.state,
+        ),
+      { timeout: 60000 },
+    );
+    const result = await host.evaluate(() => ({
+      state: document.getElementById("publish-status").dataset.state,
+      text: document.getElementById("publish-status").textContent,
+      link: (document.querySelector("#publish-status a") || {}).href,
+      signedIn: !document.getElementById("publish-signed-in").hidden,
+      stored: JSON.stringify(Object.assign({}, globalThis.localStorage)),
+    }));
+    assert.equal(result.state, "ready", result.text);
+    assert.equal(result.link, "https://smoke-test.surge.sh/");
+    // the token stays in this tab's memory: not in storage
+    assert.equal(result.signedIn, true);
+    assert.match(result.stored, /smoke-test\.surge\.sh/);
+    assert.doesNotMatch(result.stored, /token0123456789/);
+
+    assert.equal(received.length, 1);
+    assert.equal(received[0].method, "PUT");
+    assert.equal(received[0].url, "/smoke-test.surge.sh");
+    assert.equal(
+      received[0].authorization,
+      "Basic " + Buffer.from("token:token0123456789").toString("base64"),
+    );
+    // what Surge got is the site, as the HAX CLI publishes it
+    const archive = path.join(unpacked, "site.tar.gz");
+    fs.writeFileSync(archive, received[0].body);
+    const extracted = spawnSync("tar", ["-xzf", archive, "-C", unpacked], {
+      encoding: "utf8",
+    });
+    assert.equal(extracted.status, 0, extracted.stderr);
+    assert.ok(fs.existsSync(path.join(unpacked, "site.json")));
+    assert.equal(
+      fs.readFileSync(path.join(unpacked, "index.html"), "utf8"),
+      fs.readFileSync(path.join(unpacked, "ghpages.html"), "utf8"),
+    );
+    assert.equal(fs.existsSync(path.join(unpacked, "build")), false);
+    await host.click("#publish-cancel");
+  } finally {
+    server.setApi(null);
+    restoreFetch();
+    surge.close();
+    fs.rmSync(unpacked, { recursive: true, force: true });
+  }
 });
 
 test("the code editor finds its files (it loads them from inside a frame)", async () => {
