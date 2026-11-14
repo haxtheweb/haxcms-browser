@@ -119,8 +119,10 @@
   const toastAction = document.getElementById("toast-action");
   const toastDismiss = document.getElementById("toast-dismiss");
   let toastRun = null;
+  let toastOnDismiss = null;
   function toast(options) {
     toastRun = options.run || null;
+    toastOnDismiss = options.onDismiss || null;
     toastAction.hidden = !options.action;
     toastAction.textContent = options.action || "";
     toastDismiss.textContent = options.dismiss || "Not now";
@@ -130,17 +132,24 @@
   }
   toastAction.addEventListener("click", () => {
     const run = toastRun;
+    toastOnDismiss = null;
     toastBox.hidden = true;
     if (run) {
       run();
     }
   });
-  toastDismiss.addEventListener("click", () => {
+  function dismissToast() {
+    const onDismiss = toastOnDismiss;
+    toastOnDismiss = null;
     toastBox.hidden = true;
-  });
+    if (onDismiss) {
+      onDismiss();
+    }
+  }
+  toastDismiss.addEventListener("click", dismissToast);
   toastBox.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      toastBox.hidden = true;
+      dismissToast();
     }
   });
 
