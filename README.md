@@ -16,6 +16,7 @@ You get the real HAX dashboard and editor. Make a site from a template, open it,
 - **Keep the first tab open.** "Go to Site" opens a new tab; that page is still served by the tab where HAXcms started. A second HAXcms tab runs without saving, so two tabs can't overwrite each other.
 - **Download site** in the dashboard gives you a zip of a site.
 - **Publish** (on browser.hax.cloud) puts a site on the web for free with [Surge](https://surge.sh): paste a Surge token, or sign in with a Surge email and password. See [Publishing a site](#publishing-a-site).
+- **Publish to HAX Lite** (on any copy) moves a site into your account on a HAX Lite, where you keep editing it. See [Publishing to HAX Lite](#publishing-to-hax-lite).
 - **Details** in the top bar shows what is running, what is not available in the browser, and the build to quote in a bug report.
 - Problems go to [haxtheweb/issues](https://github.com/haxtheweb/issues/issues).
 
@@ -113,6 +114,19 @@ Scope and plan: [haxtheweb/issues#3341](https://github.com/haxtheweb/issues/issu
 3. The bar shows the live address. The address is remembered for that site in this browser; a site's `CNAME` (where the CLI published it) is used first.
 
 Surge accounts: a pasted token (`surge tokens add --domain <address>` makes one that only works for that address), or an email and password, which the broker sends to Surge once to get a token (`api/surge/token`; Surge creates the account if there is none). The token is kept in the tab's memory only.
+
+### Publishing to HAX Lite
+
+**Publish** also offers **HAX Lite**: a hosted HAXcms where the person has an account. This is a different kind of publish. The site is moved into their account once and edited there from then on; publishing again does not update it. It works on every copy of this page, with or without a broker, because the page talks to the HAX Lite directly.
+
+1. The person gives the address of their HAX Lite and a path for the site. The page asks that address what it accepts (`/.well-known/hax-lite-publish`) and stops if publishing from other websites is not turned on there, or if the packed site is over its size limit.
+2. A window opens on `hax-lite-callback.html`, a small page of this site, and goes on to the HAX Lite's own approval page. The person signs in there if needed and allows one site to be added. Nobody types a password or a token into this page (authorization code with PKCE, no client secret).
+3. HAX Lite sends the window back to `hax-lite-callback.html` with a one-time code, which the page exchanges for a pass that starts one import and lasts ten minutes. The same tarball the Worker packs for Surge is sent with it; HAX Lite takes `site.json`, the pages and the files, cleans the pages with HAXcms's own sanitizer, and leaves out themes, custom code and generated files.
+4. The bar shows the address of the site in HAX Lite and anything that was left out.
+
+What is kept: the HAX Lite address and the path last used, in this browser. The code and the pass are never stored. The two pages talk over a `BroadcastChannel`, which only reaches pages of this origin, and the window drops its link to the page that opened it before it goes to HAX Lite.
+
+The owner of each HAX Lite decides which websites may do this: this page's origin (for example `https://browser.hax.cloud`) has to be on that HAX Lite's list of websites allowed to publish, or its approval page says so.
 
 ### The publish broker (`api/`)
 
