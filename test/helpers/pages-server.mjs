@@ -3,6 +3,8 @@
 // With no name it is served at the root, like a site with its own domain.
 // setApi(handler) answers /api/... with handler(req, res), standing in for
 // the publish broker a Vercel deployment has (api/); setApi(null) removes it.
+// setDown(true) makes it unreachable (every connection is dropped), as when
+// the browser has no connection; setDown(false) brings it back.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -24,6 +26,7 @@ const TYPES = {
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
   ".map": "application/json",
+  ".webmanifest": "application/manifest+json",
   ".txt": "text/plain; charset=utf-8",
 };
 
@@ -32,7 +35,12 @@ export function startPagesServer(folder, name, port = 0) {
   const rootDir = fs.realpathSync(folder);
   const requests = [];
   let api = null;
+  let down = false;
   const server = http.createServer((req, res) => {
+    if (down) {
+      req.socket.destroy();
+      return;
+    }
     const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
     requests.push(req.method + " " + pathname);
     if (api && pathname.startsWith("/api/")) {
@@ -76,6 +84,9 @@ export function startPagesServer(folder, name, port = 0) {
         requests,
         setApi: (handler) => {
           api = handler;
+        },
+        setDown: (value) => {
+          down = !!value;
         },
         close: () => server.close(),
       });

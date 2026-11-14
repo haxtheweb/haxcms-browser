@@ -41,6 +41,21 @@ host page (index.html)                     HAXcms pages (in a frame)
 - **Files live in memory while you work, and are written out on every change.** haxcms-nodejs makes many synchronous file calls and browsers have no synchronous file API, so the Worker works on an in-memory volume. `src/runtime/storage.cjs` loads the sites folder from a directory handle on start (a folder you picked, or the browser's private file system: the same API) and writes what changed back after every request that can change something, before that request is answered. A failed write turns the response into an error. When you come back to the tab, files changed in the folder by other programs are picked up.
 - **Your site is a normal HAXsite folder.** What you make here opens with `hax serve` and deploys like any other HAX site.
 
+## Install it and work offline
+
+The page is an installable web app (`src/site/manifest.webmanifest`). Install it from the browser's menu, or with **Install this app** under Details where the browser offers that (on iPhone and iPad: Share, then Add to Home Screen). The app icons are the Future Traveler logo (`hax:future-traveler`), copied unchanged from [haxtheweb/art `future-traveler-logo/png`](https://github.com/haxtheweb/art/tree/main/future-traveler-logo): `logo-192` and `logo-512` as `icon-192.png` and `icon-512.png`, and the on-white versions for the maskable and Apple icons, which the device crops. Installed, it opens in its own window, the browser keeps what it has saved (Safari clears a site it has not seen for a week unless it is on the home screen), and it shows up in the device's share sheet.
+
+**Offline.** Installing, or **Make available offline** under Details, saves a copy of the whole site in the browser: the host page, the Worker, and the HAXcms front end with the translations for the languages your browser asks for (about 65 MB on disk, less to download). From then on HAX opens and works with no connection: making sites, editing, saving, managing. Publishing still needs a connection.
+
+- **Nothing is cached until you ask.** In a browser that has not installed HAX or asked for offline use, every load comes from the web server, exactly as before. This is only ever part of the browser version: sites you make, publish or run with haxcms-nodejs or haxcms-php never get a service worker from it.
+- **A copy is one build, whole.** `scripts/offline-manifest.mjs` lists every file with its size and gives the set a build id (`offline-manifest.json`). The copy is saved only by the host page (`src/site/offline.js`), counts once the last file is in, and is never added to as pages load, so the parts always match each other. With a copy, the browser uses it for the host page and the front end, with or without a connection.
+- **Updates are offered, not taken.** When the web server has a newer build, a notice says so and **Update** saves it beside the old copy (only changed files are downloaded) and swaps them when it is complete. It is used from the next reload. Until then you keep working on the build you have.
+- **Getting out is easy.** **Remove offline copy** under Details goes back to loading from the web. **Reset the app** (`reset.html`) also removes the service worker; it needs nothing else to work and the service worker never answers for it, so it works even when HAX will not start. Neither touches your sites. For a problem that reaches everyone, changing `OFFLINE_FORMAT` in `src/site/sw.js` makes every browser drop its copy the next time it checks in.
+
+Not saved offline: fonts and anything else HAXcms loads from other websites (pages fall back to the device's fonts), and translations for languages the browser did not ask for when the copy was saved.
+
+**Sharing to HAX.** Installed (Android, Chrome OS, desktop Chrome and Edge), HAX is a share target: share a photo, a file, a link or some text from another app, pick the site, and it becomes a new page. Files go to the site's `files/` folder and the page is created through HAXcms's own API, so it is sanitized and saved like anything made in the editor. Nothing is added until you confirm (`src/site/share.js`).
+
 ## What is not available in the browser
 
 The Worker reports these on boot (`unavailable`), so the editor and the status page can say so:

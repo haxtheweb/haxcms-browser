@@ -12,6 +12,10 @@
  *   public/                           haxcms-nodejs's front-end build, served
  *                                     as plain static files
  *   version.json                      which commits this was built from
+ *   manifest.webmanifest, reset.html  the installable app, and the page that
+ *                                     removes its offline copy (src/site)
+ *   offline-manifest.json,            what an offline copy is made of
+ *   offline-locales/                  (scripts/offline-manifest.mjs)
  *   .nojekyll
  *
  * The front end comes from the same haxcms-nodejs the Worker was built from
@@ -26,6 +30,7 @@ import path from "node:path";
 import process from "node:process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { writeOfflineManifest } from "./offline-manifest.mjs";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -131,4 +136,10 @@ fs.writeFileSync(
   }),
 );
 fs.writeFileSync(path.join(out, ".nojekyll"), "");
-console.log(`site written to ${out}${link ? " (public/ linked)" : ""}`);
+// last: it lists (and fingerprints) everything written above
+const offline = writeOfflineManifest(out);
+console.log(
+  `site written to ${out}${link ? " (public/ linked)" : ""}; offline copy: ` +
+    `${Object.keys(offline.files).length} files, ` +
+    `${Math.round(offline.bytes / (1024 * 1024))} MB, build ${offline.build}`,
+);
