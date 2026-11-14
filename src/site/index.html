@@ -9,6 +9,11 @@
       content="Try HAXcms with nothing installed. It runs entirely in this browser tab."
     />
     <link rel="icon" href="./public/assets/favicon.ico" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0c2a4a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="HAX" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="stylesheet" href="./shell.css" />
   </head>
   <body>
@@ -49,6 +54,9 @@
       </p>
       <p class="bar-note" id="note" role="status"></p>
       <nav class="bar-links" aria-label="About this demo">
+        <button type="button" id="share-button" aria-haspopup="dialog" hidden>
+          Shared with HAX
+        </button>
         <button type="button" id="publish-button" aria-haspopup="dialog" hidden>
           Publish
         </button>
@@ -89,6 +97,45 @@
             >
             and include the Build line.
           </p>
+          <h2 class="details-app-title" id="app-title">
+            Install and work offline
+          </h2>
+          <div class="details-app" role="group" aria-labelledby="app-title">
+            <p id="offline-state" role="status">
+              HAX is loading from the web each time. Install it, or make it
+              available offline, to open it without a connection.
+            </p>
+            <progress
+              id="offline-progress"
+              max="100"
+              value="0"
+              aria-label="Saving HAX for offline use"
+              hidden
+            ></progress>
+            <p id="storage-state"></p>
+            <p id="install-help" hidden>
+              To install on iPhone or iPad: tap Share, then Add to Home Screen.
+            </p>
+            <div class="details-actions">
+              <button type="button" id="install-button" hidden>
+                Install this app
+              </button>
+              <button type="button" id="offline-save" hidden>
+                Make available offline
+              </button>
+              <button type="button" id="offline-update" hidden>
+                Update offline copy
+              </button>
+              <button type="button" id="offline-remove" hidden>
+                Remove offline copy
+              </button>
+              <a href="./reset.html">Reset the app</a>
+            </div>
+            <p class="details-help">
+              Reset the app removes the offline copy and the service worker and
+              starts again from the web. Your sites are not touched.
+            </p>
+          </div>
         </div>
         <div class="details-hax">
           <h2>Keep going with HAX</h2>
@@ -258,11 +305,48 @@
         </div>
       </form>
     </dialog>
+    <dialog class="publish share" id="share" aria-labelledby="share-title">
+      <form id="share-form" novalidate>
+        <h2 id="share-title">Add what you shared to a site</h2>
+        <ul class="share-items" id="share-items"></ul>
+        <p class="publish-none" id="share-none" hidden></p>
+        <div class="publish-fields" id="share-fields">
+          <label for="share-site">Site</label>
+          <select id="share-site" required></select>
+          <label for="share-page">Title of the new page</label>
+          <input
+            id="share-page"
+            type="text"
+            autocomplete="off"
+            required
+            maxlength="200"
+          />
+          <div id="share-descriptions"></div>
+        </div>
+        <p class="publish-status" id="share-status" role="status"></p>
+        <div class="publish-actions">
+          <button type="button" id="share-discard">Discard</button>
+          <button type="button" id="share-later">Not now</button>
+          <button type="submit" id="share-submit" class="primary">
+            Add as a new page
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <section class="toast" id="toast" aria-label="Notice" hidden>
+      <p id="toast-text" role="status"></p>
+      <div class="toast-actions">
+        <button type="button" id="toast-action" class="primary"></button>
+        <button type="button" id="toast-dismiss">Not now</button>
+      </div>
+    </section>
     <main class="stage">
       <div class="message" id="message" hidden></div>
       <iframe id="app" title="HAXcms" hidden></iframe>
     </main>
     <script src="./publish.js"></script>
+    <script src="./offline.js"></script>
+    <script src="./share.js"></script>
     <script src="./shell.js"></script>
     <script src="./frame.js"></script>
   </body>

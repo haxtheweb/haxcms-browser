@@ -19,6 +19,10 @@
  *
  * Publish (publish.js) puts a site on the web through this deployment's
  * publish broker (api/), when it has one.
+ *
+ * The page can be installed as an app and kept for use with no connection
+ * (offline.js), and installed it takes what other apps share to it
+ * (share.js).
  */
 (function () {
   "use strict";
@@ -60,6 +64,16 @@
     send,
     isRunning: () => running,
   });
+  const offline = globalThis.HaxcmsOffline({ toast });
+  const sharer = globalThis.HaxcmsShare({
+    request: signedInRequest,
+    siteTokens,
+    send,
+    isRunning: () => running,
+    canSave: () => !storage.elsewhere,
+    openPage,
+    notify,
+  });
   // the last change could not be written to storage
   let saveProblem = false;
 
@@ -71,6 +85,7 @@
   function fail(title, error) {
     running = false;
     publisher.show(false);
+    sharer.hide();
     setStatus("HAXcms could not start", "error");
     frame.hidden = true;
     message.hidden = false;
@@ -96,6 +111,38 @@
       }
     }, 15000);
   }
+
+  // A notice with one thing to do about it, in the corner of the page:
+  // toast({ text, action, run, dismiss }). A new one replaces the last.
+  const toastBox = document.getElementById("toast");
+  const toastText = document.getElementById("toast-text");
+  const toastAction = document.getElementById("toast-action");
+  const toastDismiss = document.getElementById("toast-dismiss");
+  let toastRun = null;
+  function toast(options) {
+    toastRun = options.run || null;
+    toastAction.hidden = !options.action;
+    toastAction.textContent = options.action || "";
+    toastDismiss.textContent = options.dismiss || "Not now";
+    // shown first, then filled, so screen readers announce the text
+    toastBox.hidden = false;
+    toastText.textContent = options.text;
+  }
+  toastAction.addEventListener("click", () => {
+    const run = toastRun;
+    toastBox.hidden = true;
+    if (run) {
+      run();
+    }
+  });
+  toastDismiss.addEventListener("click", () => {
+    toastBox.hidden = true;
+  });
+  toastBox.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      toastBox.hidden = true;
+    }
+  });
 
   // what the runtime could not load, as the features people know
   const FEATURES = {
@@ -245,6 +292,7 @@
         handle: null,
         reason:
           "HAXcms is already open in another tab, which is the one saving",
+        elsewhere: true,
       };
     }
     try {
@@ -469,13 +517,26 @@
     }
     const port = event.ports[0];
     port.postMessage({ ack: true });
-    const request = Object.assign({}, data.request, { binary: true });
+    dispatch(data.request)
+      .then((response) => {
+        port.postMessage({ response }, response.body ? [response.body] : []);
+      })
+      .catch((error) => {
+        console.error("[haxcms-browser]", error);
+        port.postMessage({ error: String((error && error.message) || error) });
+      });
+  }
+
+  // One request to HAXcms, with the session's cookies, the way the service
+  // worker's relayed requests and this page's own both go.
+  function dispatch(original) {
+    const request = Object.assign({}, original, { binary: true });
     request.headers = Object.assign({}, request.headers);
     if (cookies.size) {
       request.headers.cookie = cookieHeader();
     }
-    send("request", request, request.body ? [request.body] : [])
-      .then((response) => {
+    return send("request", request, request.body ? [request.body] : []).then(
+      (response) => {
         rememberCookies(response.headers);
         if (response.saveFailed) {
           // HAXcms shows its own error; the bar says why, until a later
@@ -489,20 +550,103 @@
           saveProblem = false;
           setStatus(RUNNING, "ready");
         }
-        port.postMessage({ response }, response.body ? [response.body] : []);
-      })
-      .catch((error) => {
-        console.error("[haxcms-browser]", error);
-        port.postMessage({ error: String((error && error.message) || error) });
+        return response;
+      },
+    );
+  }
+
+  // A request this page makes itself (share.js), as a page inside the
+  // session would: same origin, answered as { status, json }.
+  async function signedInRequest(request) {
+    const response = await dispatch({
+      method: request.method,
+      url: request.url,
+      headers: Object.assign(
+        {
+          origin: globalThis.location.origin,
+          referer: globalThis.location.origin + mount,
+        },
+        request.headers,
+      ),
+      body: request.body || null,
+    });
+    let json = null;
+    try {
+      json = JSON.parse(new TextDecoder().decode(response.body));
+    } catch (e) {
+      json = null;
+    }
+    return { status: response.status, json };
+  }
+
+  // The tokens HAXcms wants on a change to a site, for the local user: the
+  // same ones it hands the editor on a site's pages. The sign-in from when
+  // HAXcms started is used while it lasts, then the user is signed in again.
+  let sessionJwt = "";
+  function rememberSignIn(signedIn) {
+    rememberCookies(signedIn.headers);
+    try {
+      sessionJwt = JSON.parse(globalThis.atob(signedIn.body)).jwt || "";
+    } catch (e) {
+      sessionJwt = "";
+    }
+  }
+  async function siteTokens(site) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!sessionJwt || attempt) {
+        rememberSignIn(await send("signIn", {}));
+      }
+      const answer = await signedInRequest({
+        method: "GET",
+        url:
+          "/system/api/v1/session/connection-test?siteName=" +
+          encodeURIComponent(site),
+        headers: { authorization: "Bearer " + sessionJwt },
       });
+      const granted = answer.json || {};
+      if (granted.authenticated && granted.jwt && granted.siteToken) {
+        return {
+          authorization: "Bearer " + granted.jwt,
+          "x-haxcms-site-token": granted.siteToken,
+        };
+      }
+    }
+    throw new Error("HAXcms did not open the site for writing");
+  }
+
+  // show a page of a site in the frame
+  function openPage(site, slug) {
+    if (running && frame.contentWindow) {
+      frame.contentWindow.location.assign(
+        mount +
+          "_sites/" +
+          encodeURIComponent(site) +
+          "/" +
+          String(slug || "")
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/"),
+      );
+    }
   }
 
   async function registerServiceWorker() {
-    const registration = await navigator.serviceWorker.register("./sw.js", {
-      scope: "./",
-    });
-    await navigator.serviceWorker.ready;
-    return registration;
+    let registration;
+    try {
+      registration = await navigator.serviceWorker.register("./sw.js", {
+        scope: "./",
+        // always ask the web server for sw.js itself: a fixed service
+        // worker has to be able to reach every browser
+        updateViaCache: "none",
+      });
+    } catch (error) {
+      // with no connection the browser cannot look for a newer sw.js; the
+      // one already running this page is the one to use
+      if (!navigator.serviceWorker.controller) {
+        throw error;
+      }
+    }
+    return registration || navigator.serviceWorker.ready;
   }
 
   async function loadJson(url) {
@@ -579,7 +723,7 @@
         "could not sign in the local user (" + signedIn.status + ")",
       );
     }
-    rememberCookies(signedIn.headers);
+    rememberSignIn(signedIn);
     lastBoot = {
       mode: booted.mode,
       unavailable: booted.unavailable,
@@ -589,6 +733,9 @@
     publisher.show(true);
     showStorage();
     showDetails();
+    sharer
+      .start()
+      .catch((error) => console.warn("[haxcms-browser] share", error));
     message.hidden = true;
     frame.hidden = false;
     if (frame.getAttribute("src")) {
@@ -624,11 +771,13 @@
   async function restart(chosen) {
     running = false;
     publisher.show(false);
+    sharer.hide();
     saveProblem = false;
     setStatus("Starting HAXcms in your browser…", "");
     await emptyFrame();
     stopWorker();
     cookies.clear();
+    sessionJwt = "";
     await boot(chosen);
   }
 
@@ -657,6 +806,9 @@
     ]);
     snapshot = loaded[1];
     version = loaded[2];
+    offline
+      .start()
+      .catch((error) => console.warn("[haxcms-browser] offline", error));
     try {
       await boot(loaded[3]);
     } catch (error) {

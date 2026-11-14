@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reset HAX in this browser</title>
+    <meta name="robots" content="noindex" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        max-width: 60ch;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      button,
+      a.open {
+        display: inline-block;
+        margin: 0.5rem 0.5rem 0.5rem 0;
+        padding: 0.5rem 1rem;
+        border: 2px solid currentColor;
+        border-radius: 4px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      The way out when HAX in the browser will not start or will not update
+      (haxtheweb/issues#3331). It removes this site's service worker and its
+      offline copy, so the next visit loads everything from the web again.
+
+      Rules this page keeps:
+      - It needs nothing else to work: no other file, no service worker. The
+        service worker never answers for this page (sw.js), so it always
+        comes from the web server.
+      - It only removes what can be fetched again: the service worker, the
+        offline copy, and anything shared to HAX that was still waiting.
+        Sites are not touched, wherever they are saved.
+      - Only this site's things are removed, not those of other sites on the
+        same origin.
+    -->
+    <main>
+      <h1>Reset HAX in this browser</h1>
+      <p>
+        Use this if HAX will not start here, or keeps showing an old version. It
+        removes the offline copy of HAX and the service worker that runs it, so
+        HAX loads fresh from the web the next time you open it.
+      </p>
+      <p>
+        <strong>Your sites are not touched.</strong> Sites saved in this
+        browser, or in a folder on your computer, stay where they are.
+      </p>
+      <p>
+        <button type="button" id="reset">Reset HAX</button>
+        <a class="open" href="./">Open HAX</a>
+      </p>
+      <p id="result" role="status"></p>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+        var scope = new URL("./", location.href).pathname;
+        var result = document.getElementById("result");
+
+        function ours(name) {
+          return (
+            (name.indexOf("haxcms-browser-offline:") === 0 &&
+              name.indexOf(":" + scope + ":") !== -1) ||
+            name === "haxcms-browser-share:" + scope
+          );
+        }
+
+        async function reset() {
+          var removed = { workers: 0, caches: 0 };
+          if (navigator.serviceWorker) {
+            var registrations =
+              await navigator.serviceWorker.getRegistrations();
+            for (var i = 0; i < registrations.length; i++) {
+              if (new URL(registrations[i].scope).pathname === scope) {
+                await registrations[i].unregister();
+                removed.workers += 1;
+              }
+            }
+          }
+          if (self.caches) {
+            var names = await caches.keys();
+            for (var j = 0; j < names.length; j++) {
+              if (ours(names[j])) {
+                await caches.delete(names[j]);
+                removed.caches += 1;
+              }
+            }
+          }
+          return removed;
+        }
+
+        document.getElementById("reset").addEventListener("click", function () {
+          result.textContent = "Resetting…";
+          reset().then(
+            function (removed) {
+              result.dataset.done = "true";
+              result.textContent =
+                removed.workers || removed.caches
+                  ? "Done. The service worker and the offline copy are gone. Close any other HAX tabs, then open HAX."
+                  : "There was nothing to remove: HAX is already loading from the web here.";
+            },
+            function (error) {
+              result.textContent =
+                "That did not work (" +
+                String((error && error.message) || error) +
+                "). Clearing site data for this page in your browser's settings does the same, but that also removes sites saved in this browser.";
+            },
+          );
+        });
+      })();
+    </script>
+  </body>
+</html>

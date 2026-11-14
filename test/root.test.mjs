@@ -122,6 +122,67 @@ test("at the root of a domain a site can be created and opened", async () => {
   );
 });
 
+test("at the root of a domain the app installs, saves an offline copy and starts with no connection", async () => {
+  const manifest = await host.evaluate(async () => {
+    const link = document.querySelector('link[rel="manifest"]');
+    const body = await (await fetch(link.href)).json();
+    return {
+      start: new URL(body.start_url, link.href).pathname,
+      scope: new URL(body.scope, link.href).pathname,
+      share: new URL(body.share_target.action, link.href).pathname,
+    };
+  });
+  assert.deepEqual(manifest, { start: "/", scope: "/", share: "/share" });
+
+  // the earlier test left the site open in a tab in front of this one
+  await host.bringToFront();
+  await host.click("#details-button");
+  await host.click("#offline-save");
+  await host.waitForFunction(
+    () =>
+      /works offline/.test(
+        document.getElementById("offline-state").textContent,
+      ),
+    { timeout: 240000 },
+  );
+  assert.deepEqual(
+    await host.evaluate(async () =>
+      (await caches.keys()).filter((name) => /offline/.test(name)),
+    ),
+    [
+      "haxcms-browser-offline:1:/:" +
+        JSON.parse(
+          fs.readFileSync(path.join(out, "offline-manifest.json"), "utf8"),
+        ).build,
+    ],
+  );
+
+  server.setDown(true);
+  await host.reload({ waitUntil: "load" });
+  await host.waitForFunction(
+    () =>
+      ["ready", "error"].includes(document.getElementById("dot").dataset.state),
+    { timeout: 90000 },
+  );
+  assert.equal(
+    await host.$eval("#status", (el) => el.textContent),
+    "HAXcms is running in your browser",
+  );
+  const offlineFrame = host.frames().find((f) => f.url().includes("/app/"));
+  await offlineFrame.waitForFunction(() => document.title === "HAX: Home", {
+    timeout: 30000,
+  });
+  // the site made earlier opens too, from browser storage and the copy
+  const site = await offlineFrame.evaluate(async (name) => {
+    const response = await fetch("_sites/" + name + "/site.json", {
+      cache: "no-store",
+    });
+    return response.status;
+  }, SITE);
+  assert.equal(site, 200);
+  server.setDown(false);
+});
+
 test("at the root of a domain nothing HAXcms asks for reaches the web server", () => {
   assert.deepEqual(
     server.requests.filter((r) => /^\w+ \/app\//.test(r)),
