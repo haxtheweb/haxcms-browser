@@ -36,7 +36,8 @@
     "serve": "node scripts/serve-site.mjs"
   },
   "files": [
-    "dist"
+    "dist/haxcms-worker.js",
+    "dist/haxcms-snapshot.json"
   ],
   "keywords": [
     "haxcms",
