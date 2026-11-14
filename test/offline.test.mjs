@@ -22,6 +22,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = "offline-site";
 const SCOPE = "/haxcms-browser/";
 const COPY = "haxcms-browser-offline:1:" + SCOPE + ":";
+const OFFER_KEY = "haxcms-browser:install-offer-dismissed";
 
 let out;
 let server;
@@ -111,6 +112,13 @@ before(async () => {
     defaultViewport: { width: 1280, height: 800 },
   });
   host = await browser.newPage();
+  // Chrome finds this page installable and fires its install event, which
+  // shows the install notice; keep it quiet except in the test about it
+  await host.evaluateOnNewDocument((key) => {
+    if (!sessionStorage.getItem("test:install-offer")) {
+      localStorage.setItem(key, String(Date.now()));
+    }
+  }, OFFER_KEY);
   await host.goto(server.url, { waitUntil: "load" });
   await ready(host);
 });
@@ -172,6 +180,56 @@ test("nothing is kept for offline use until someone asks", async () => {
   assert.equal(await host.$eval("#offline-save", (el) => el.hidden), false);
   assert.equal(await host.$eval("#offline-remove", (el) => el.hidden), true);
   assert.equal(await toastText(host), "");
+});
+
+test("the manifest is requested with the page's cookies, so a deployment behind a sign-in stays installable", async () => {
+  assert.equal(
+    await host.$eval('link[rel="manifest"]', (el) => el.crossOrigin),
+    "use-credentials",
+  );
+});
+
+test("when the browser says HAX can be installed, a notice offers it; Not now is remembered", async () => {
+  await host.evaluate((key) => {
+    sessionStorage.setItem("test:install-offer", "1");
+    localStorage.removeItem(key);
+  }, OFFER_KEY);
+  await host.reload({ waitUntil: "load" });
+  await ready(host);
+  // Chrome's own install event (this page meets its install rules)
+  await host.waitForFunction(
+    () =>
+      !document.getElementById("toast").hidden &&
+      /Install HAX as an app\?/.test(
+        document.getElementById("toast-text").textContent,
+      ),
+    { timeout: 30000 },
+  );
+  assert.equal(
+    await host.$eval("#toast-action", (el) => el.textContent),
+    "Install",
+  );
+  await host.click("#toast-dismiss");
+  await host.reload({ waitUntil: "load" });
+  await ready(host);
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  assert.equal(await toastText(host), "", "not offered again so soon");
+
+  // the button under Details is still there, and asks the browser
+  await host.evaluate(() => {
+    globalThis.__prompted = 0;
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    event.prompt = () => {
+      globalThis.__prompted += 1;
+      return Promise.resolve();
+    };
+    globalThis.dispatchEvent(event);
+  });
+  await openDetails(host);
+  assert.equal(await host.$eval("#install-button", (el) => el.hidden), false);
+  await host.click("#install-button");
+  assert.equal(await host.evaluate(() => globalThis.__prompted), 1);
+  await host.evaluate(() => sessionStorage.removeItem("test:install-offer"));
 });
 
 test("Make available offline saves one whole build", async () => {
