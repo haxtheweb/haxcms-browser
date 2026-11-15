@@ -1147,6 +1147,132 @@ test("Sign in runs the provider in a popup and fills in new sites' author", asyn
       email: "ada@example.com",
       image: "https://avatars.example/ada.png",
     });
+
+    // and an About page with their name and picture, but no first post:
+    // this is a course, not a blog
+    const pagesOf = (name) =>
+      frame.evaluate(
+        async (base, site) => {
+          const manifest = await (
+            await fetch(base + "_sites/" + site + "/site.json", {
+              cache: "no-store",
+            })
+          ).json();
+          const pages = [];
+          for (const item of manifest.items) {
+            const html = await (
+              await fetch(base + "_sites/" + site + "/" + item.location, {
+                cache: "no-store",
+              })
+            ).text();
+            pages.push({ title: item.title, parent: item.parent, html });
+          }
+          return pages;
+        },
+        mount,
+        name,
+      );
+    let pages = await pagesOf("authored-site");
+    const about = pages.filter((page) => page.title === "About");
+    assert.equal(about.length, 1);
+    assert.equal(about[0].parent, null);
+    assert.match(
+      about[0].html,
+      /<img src="https:\/\/avatars\.example\/ada\.png" alt="Ada Lovelace"/,
+    );
+    assert.match(about[0].html, /This site is by Ada Lovelace\./);
+    assert.equal(
+      pages.filter((page) => /^Hello from/.test(page.title)).length,
+      0,
+    );
+
+    // a blog also gets a first post: the blog skeleton, or a blog theme
+    // (the dashboard names either as the skeleton)
+    for (const [name, skeleton] of [
+      ["authored-blog", "blog"],
+      ["authored-simple-blog", "simple-blog"],
+    ]) {
+      const made = await frame.evaluate(
+        async (base, site, machineName) => {
+          const s = globalThis.appSettings;
+          const response = await fetch(base + "system/api/v1/sites", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: "Bearer " + s.jwt,
+              "x-haxcms-user-token": s.userToken,
+            },
+            body: JSON.stringify({
+              site: { name: site },
+              build: {
+                type: "skeleton",
+                structure: "from-skeleton",
+                skeletonMachineName: machineName,
+                items: null,
+                files: null,
+              },
+            }),
+          });
+          return response.status;
+        },
+        mount,
+        name,
+        skeleton,
+      );
+      assert.equal(made, 200, skeleton);
+      pages = await pagesOf(name);
+      assert.equal(
+        pages.filter((page) => page.title === "About").length,
+        1,
+        skeleton,
+      );
+      const post = pages.filter(
+        (page) => page.title === "Hello from Ada Lovelace",
+      );
+      assert.equal(post.length, 1, skeleton);
+      assert.match(post[0].html, /This is the first post on this site\./);
+    }
+
+    // a site that already has an About page keeps it as it is
+    const second = await frame.evaluate(async (base) => {
+      const s = globalThis.appSettings;
+      const response = await fetch(base + "system/api/v1/sites", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + s.jwt,
+          "x-haxcms-user-token": s.userToken,
+        },
+        body: JSON.stringify({
+          site: { name: "has-about" },
+          build: {
+            type: "own",
+            structure: "import",
+            items: [
+              {
+                id: "item-about",
+                title: "About me",
+                slug: "about-me",
+                order: 0,
+                parent: null,
+                indent: 0,
+                location: "pages/about-me/index.html",
+                contents: "<p>My own words</p>",
+              },
+            ],
+            files: null,
+          },
+          theme: { name: "clean-one", variables: {} },
+        }),
+      });
+      return response.status;
+    }, mount);
+    assert.equal(second, 200);
+    pages = await pagesOf("has-about");
+    assert.deepEqual(
+      pages.filter((page) => /^about/i.test(page.title)).map((p) => p.title),
+      ["About me"],
+    );
   } finally {
     server.setApi(null);
   }

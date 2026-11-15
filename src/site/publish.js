@@ -190,6 +190,9 @@
     const dialog = byId("publish");
     const form = byId("publish-form");
     const none = byId("publish-none");
+    const offlineNote = byId("publish-offline");
+    // the last broker check could not reach the network at all
+    let unreachable = false;
     const fields = byId("publish-fields");
     const siteSelect = byId("publish-site");
     const domainInput = byId("publish-domain");
@@ -321,6 +324,7 @@
     // asked each time the dialog opens: the answer is small, and a broker
     // that was out a moment ago, or whose limits changed, is seen again
     async function checkBroker() {
+      unreachable = false;
       try {
         const response = await fetch(new URL("status", brokerBase), {
           cache: "no-store",
@@ -331,7 +335,10 @@
             ? { maxBytes: Number(body.publish.surge.maxBytes) || 0 }
             : false;
       } catch (e) {
+        // fetch only throws when there is no answer at all (a copy without
+        // a broker answers 404 and does not land here)
         broker = false;
+        unreachable = true;
       }
       return broker;
     }
@@ -339,7 +346,9 @@
     async function open() {
       setStatus("", "");
       const found = await checkBroker();
-      const providers = auth ? await auth.list() : [];
+      // offline: no host can be reached, so offer none and say why
+      const offline = navigator.onLine === false || unreachable;
+      const providers = auth && !offline ? await auth.list() : [];
       hosts = [];
       if (found) {
         hosts.push({
@@ -374,7 +383,8 @@
         hostSelect.append(option);
       }
       const available = hosts.length > 0;
-      none.hidden = available;
+      offlineNote.hidden = !offline;
+      none.hidden = available || offline;
       fields.hidden = !available;
       limit.hidden = !(found && found.maxBytes);
       if (found && found.maxBytes) {
