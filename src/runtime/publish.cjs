@@ -9,7 +9,8 @@
  *   front-end build without a HAXcms server); ghpages.html stays as well
  * - left out: what only exists for a local HAXcms (the top-level build/
  *   folder and wc-registry.json, assets/babel*), node_modules, dist, logs,
- *   *.log, and every dotfile or dot folder
+ *   *.log, and every dotfile or dot folder but .well-known (agent discovery
+ *   files) at the top of the site
  * - only regular files are packed; symbolic links (the ones haxcms-nodejs
  *   makes inside a site point at its shared front-end build) are skipped
  *
@@ -49,7 +50,15 @@ function validSiteName(name) {
 function skipped(relative) {
   const parts = relative.split("/");
   const name = parts[parts.length - 1];
-  if (parts.some((part) => part.charAt(0) === ".")) {
+  // dot files stay out, except .well-known at the top of the site: agent
+  // discovery (agent-skills, api-catalog, security.txt), the same folder
+  // the HAX CLI's site:build-static publishes (haxtheweb/issues#3352)
+  if (
+    parts.some(
+      (part, index) =>
+        part.charAt(0) === "." && !(index === 0 && part === ".well-known"),
+    )
+  ) {
     return true;
   }
   if (parts.some((part) => ANYWHERE_SKIP.has(part))) {
