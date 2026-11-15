@@ -94,6 +94,90 @@ function copyDir(from, to, skip) {
   }
 }
 
+// The address the site is published at, for the canonical link, social
+// cards, sitemap.xml and robots.txt's Sitemap line (haxtheweb/issues#3352):
+// HAX_SITE_URL, else the production domain Vercel gives every build. A
+// copy built without either (GitHub Pages, a fork) gets none of those, since
+// a guessed address would point search engines at the wrong site.
+function siteUrl() {
+  let value = process.env.HAX_SITE_URL || "";
+  if (!value && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    value = "https://" + process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  }
+  if (!value) {
+    return "";
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("HAX_SITE_URL is not an address: " + value);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("HAX_SITE_URL must be an http(s) address: " + value);
+  }
+  return (
+    url.origin +
+    (url.pathname.endsWith("/") ? url.pathname : url.pathname + "/")
+  );
+}
+
+function escapeAttribute(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// robots.txt always; with an address also sitemap.xml, the canonical link,
+// og:url, og:image and the JSON-LD url in index.html
+function writeDiscoveryFiles(outDir, address) {
+  const robots = ["User-agent: *", "Allow: /", "Disallow: /oauth/"];
+  if (address === "") {
+    fs.writeFileSync(path.join(outDir, "robots.txt"), robots.join("\n") + "\n");
+    return;
+  }
+  robots.push("", "Sitemap: " + address + "sitemap.xml");
+  fs.writeFileSync(path.join(outDir, "robots.txt"), robots.join("\n") + "\n");
+  fs.writeFileSync(
+    path.join(outDir, "sitemap.xml"),
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      "  <url><loc>" +
+      escapeAttribute(address) +
+      "</loc><lastmod>" +
+      new Date().toISOString().slice(0, 10) +
+      "</lastmod></url>\n</urlset>\n",
+  );
+  const indexPath = path.join(outDir, "index.html");
+  let html = fs.readFileSync(indexPath, "utf8");
+  const safe = escapeAttribute(address);
+  const tags =
+    '    <link rel="canonical" href="' +
+    safe +
+    '" />\n' +
+    '    <meta property="og:url" content="' +
+    safe +
+    '" />\n' +
+    '    <meta property="og:image" content="' +
+    safe +
+    'icon-512.png" />\n';
+  html = html.replace(
+    '    <meta property="og:type"',
+    tags + '    <meta property="og:type"',
+  );
+  html = html.replace(
+    /(<script type="application\/ld\+json" data-site-jsonld>\s*\{)/,
+    (match) =>
+      match +
+      '\n        "url": ' +
+      JSON.stringify(address).replace(/</g, "\\u003c") +
+      ",",
+  );
+  fs.writeFileSync(indexPath, html);
+}
+
 const dist = path.join(root, "dist");
 for (const file of ["haxcms-worker.js", "haxcms-snapshot.json"]) {
   if (!fs.existsSync(path.join(dist, file))) {
@@ -114,6 +198,7 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 copyDir(path.join(root, "src/site"), out);
+writeDiscoveryFiles(out, siteUrl());
 for (const file of ["haxcms-worker.js", "haxcms-snapshot.json"]) {
   fs.copyFileSync(path.join(dist, file), path.join(out, file));
 }

@@ -178,3 +178,33 @@ test("generated files are added only where the site has none", async () => {
     nodeFs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("rendered pages replace the shell and add page folders, never site files", async () => {
+  const fs = seed();
+  const encoder = new TextEncoder();
+  const pages = [
+    { path: "index.html", bytes: encoder.encode("RENDERED HOME") },
+    { path: "about/index.html", bytes: encoder.encode("RENDERED ABOUT") },
+    // the site has this file: kept as the site's own
+    { path: "site.json", bytes: encoder.encode("NOT THE SITE") },
+  ];
+  const files = publish.publishFiles(fs, path.posix, SITE, [], pages);
+  const text = (name) =>
+    new TextDecoder().decode(files.find((file) => file.path === name).bytes);
+  assert.equal(text("index.html"), "RENDERED HOME");
+  assert.equal(text("about/index.html"), "RENDERED ABOUT");
+  assert.notEqual(text("site.json"), "NOT THE SITE");
+  // sorted, like every pack
+  const paths = files.map((file) => file.path);
+  assert.deepEqual(paths, [...paths].sort());
+  // without pages the shell is published as before
+  const plain = publish.publishFiles(fs, path.posix, SITE, []);
+  assert.equal(
+    new TextDecoder().decode(
+      plain.find((file) => file.path === "index.html").bytes,
+    ),
+    new TextDecoder().decode(
+      plain.find((file) => file.path === "ghpages.html").bytes,
+    ),
+  );
+});

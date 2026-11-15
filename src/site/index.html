@@ -9,6 +9,45 @@
       content="Try HAXcms with nothing installed. It runs entirely in this browser tab."
     />
     <link rel="icon" href="./public/assets/favicon.ico" />
+    <!-- for search and AI agents (haxtheweb/issues#3352); the canonical
+      address, og:url, og:image and the JSON-LD url are added by
+      scripts/build-site.mjs when the site's address is known -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="HAX" />
+    <meta property="og:title" content="HAXcms in your browser" />
+    <meta
+      property="og:description"
+      content="Try HAXcms with nothing installed. It runs entirely in this browser tab."
+    />
+    <meta name="twitter:card" content="summary" />
+    <link rel="llms" href="./llms.txt" title="LLM Content Map" />
+    <link
+      rel="alternate"
+      type="text/markdown"
+      href="./llms.txt"
+      title="Markdown Summary"
+    />
+    <script type="application/ld+json" data-site-jsonld>
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "HAXcms in your browser",
+        "description": "Try HAXcms, the HAX site builder, with nothing installed. The HAX dashboard and editor run entirely in a browser tab; sites are saved in the browser, to a folder on your computer or to your own cloud storage, and can be published for free.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any (web browser)",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "codeRepository": "https://github.com/haxtheweb/haxcms-browser",
+        "sameAs": ["https://github.com/haxtheweb/haxcms-browser"],
+        "publisher": {
+          "@type": "Organization",
+          "name": "HAXTheWeb",
+          "url": "https://haxtheweb.org/",
+          "sameAs": ["https://github.com/haxtheweb"]
+        }
+      }
+    </script>
     <!-- use-credentials: a deployment behind a sign-in (Vercel preview
       protection) answers a manifest request without cookies with its
       sign-in page, and the page is then not installable -->
@@ -55,6 +94,7 @@
       </symbol>
     </svg>
     <header class="bar" role="banner">
+      <h1 class="visually-hidden">HAXcms in your browser</h1>
       <p class="bar-status">
         <span class="dot" id="dot" aria-hidden="true"></span>
         <span id="status" role="status">Starting HAXcms in your browser…</span>
@@ -452,6 +492,22 @@
       </div>
     </section>
     <main class="stage">
+      <noscript>
+        <div class="message">
+          <p>
+            HAXcms in your browser runs the HAX site builder entirely in this
+            tab, so it needs JavaScript. Turn JavaScript on to make a site from
+            a template, edit its pages with the HAX editor, and save it in the
+            browser, to a folder on your computer or to your own cloud storage.
+            Sites can be downloaded as a zip or published for free to Surge,
+            GitHub Pages, GitLab Pages, Codeberg Pages, Netlify or Vercel.
+          </p>
+          <p>
+            Prefer a terminal? The HAX CLI does the same:
+            <a href="https://github.com/haxtheweb/create">haxtheweb/create</a>.
+          </p>
+        </div>
+      </noscript>
       <div class="message" id="message" hidden></div>
       <iframe id="app" title="HAXcms" hidden></iframe>
     </main>

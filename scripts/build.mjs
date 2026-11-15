@@ -136,6 +136,18 @@ module.exports = stub;
 const haxcmsBrowserPlugin = {
   name: "haxcms-browser",
   setup(build) {
+    // haxtheweb/issues#3352: the static page renderer is newer than some
+    // haxcms-nodejs versions this builds against; without it the bundle gets
+    // an empty module and Publish packs the ghpages.html shell, as before.
+    build.onResolve({ filter: /^haxcms-nodejs\/lib\/staticPages\.js$/ }, () =>
+      fs.existsSync(path.join(SRC, "lib", "staticPages.js"))
+        ? { path: path.join(SRC, "lib", "staticPages.js") }
+        : { path: "staticPages.js", namespace: "optional-missing" },
+    );
+    build.onLoad({ filter: /.*/, namespace: "optional-missing" }, () => ({
+      loader: "js",
+      contents: "module.exports = {};",
+    }));
     // One stream implementation for everything. Several packages bring
     // their own old copy of Node's streams (readable-stream 2 and 3); mixed
     // with the Worker's "stream" they break when one pipes into the other

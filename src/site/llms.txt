@@ -1,0 +1,20 @@
+# HAXcms in your browser
+
+> Try HAXcms, the HAX site builder, with nothing installed: the real HAX dashboard and editor run entirely in a browser tab, and sites are saved in the browser, to a folder on your computer or to your own cloud storage, never to a server we run.
+
+HAXcms in the browser is haxcms-nodejs (the Node.js HAXcms backend) bundled to run in a Web Worker. People make a site from a template, edit pages with the HAX editor, download it as a zip, or publish it for free to Surge, GitHub Pages, GitLab Pages, Codeberg Pages, Netlify or Vercel. Every site is a normal HAXsite folder (site.json in JSON Outline Schema plus HTML pages) that the HAX CLI (`hax serve`) or any HAXcms server opens.
+
+Use it when someone wants to see or try HAX quickly, or to build and publish a small site without installing anything. For scripted or agent work on sites, use the HAX CLI (`npm install --global @haxtheweb/create`, then `hax site`) instead: this app is driven by a person in a browser and has no API of its own.
+
+## Docs
+
+- [README](https://github.com/haxtheweb/haxcms-browser/blob/main/README.md): what it does, saving, publishing, and limits
+- [Publishing providers](https://github.com/haxtheweb/haxcms-browser/blob/main/docs/providers.md): setting up sign-in and publishing for your own copy
+- [AGENTS.md](https://github.com/haxtheweb/haxcms-browser/blob/main/AGENTS.md): rules for agents working on this code
+
+## HAX
+
+- [HAX documentation](https://haxtheweb.org/): what HAX is and how to use it
+- [HAX CLI](https://github.com/haxtheweb/create): create, edit and publish HAX sites from a terminal
+- [haxcms-nodejs](https://github.com/haxtheweb/haxcms-nodejs): the HAXcms backend this runs
+- [Issues](https://github.com/haxtheweb/issues/issues): report a problem or ask for a feature

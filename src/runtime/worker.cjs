@@ -171,6 +171,45 @@ async function llmsFullExtra(HAXCMS, name) {
   return extras;
 }
 
+// The pages a static host serves, rendered by haxcms-nodejs with each
+// page's metadata and text (haxtheweb/issues#3352); the address is the
+// one the site was published to before (its CNAME), if any. A
+// haxcms-nodejs without the renderer, or a failure, adds nothing: the
+// publish then ships the ghpages.html shell as before.
+async function renderedPages(HAXCMS, name) {
+  const staticPages = require("haxcms-nodejs/lib/staticPages.js");
+  if (!staticPages || typeof staticPages.renderStaticPages !== "function") {
+    return [];
+  }
+  try {
+    // HAXCMSSite.load reads the site as it is (HAXCMS.loadSite can
+    // upgrade an old site's files, and publishing never changes a site)
+    const { HAXCMSSite } = require("haxcms-nodejs/lib/HAXCMS.js");
+    const site = new HAXCMSSite();
+    await site.load(
+      HAXCMS.HAXCMS_ROOT + HAXCMS.sitesDirectory,
+      HAXCMS.basePath + HAXCMS.sitesDirectory + "/",
+      name,
+    );
+    let domain = "";
+    const cname = path.join(sitesFolder(), name, "CNAME");
+    if (fs.existsSync(cname)) {
+      const value = String(fs.readFileSync(cname, "utf8")).trim();
+      if (/^[a-z0-9.-]+$/i.test(value)) {
+        domain = "https://" + value + "/";
+      }
+    }
+    const pages = await staticPages.renderStaticPages(site, { domain });
+    const encoder = new TextEncoder();
+    return pages.map((page) => ({
+      path: page.path,
+      bytes: encoder.encode(page.html),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 const handlers = {
   async boot({ snapshot, root, basePath, origin, storage }) {
     if (state.HAXCMS) {
@@ -372,7 +411,8 @@ const handlers = {
       throw new Error("no site named " + name);
     }
     const extras = await llmsFullExtra(HAXCMS, name);
-    const files = publish.publishFiles(fs, path, siteDir, extras);
+    const pages = await renderedPages(HAXCMS, name);
+    const files = publish.publishFiles(fs, path, siteDir, extras, pages);
     return {
       files: files.map((file) => {
         const bytes =
@@ -399,7 +439,8 @@ const handlers = {
       throw new Error("no site named " + name);
     }
     const extras = await llmsFullExtra(HAXCMS, name);
-    return publish.packSite(fs, path, siteDir, extras);
+    const pages = await renderedPages(HAXCMS, name);
+    return publish.packSite(fs, path, siteDir, extras, pages);
   },
 };
 
