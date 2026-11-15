@@ -942,10 +942,33 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
     });
     assert.equal(extracted.status, 0, extracted.stderr);
     assert.ok(fs.existsSync(path.join(unpacked, "site.json")));
-    assert.equal(
-      fs.readFileSync(path.join(unpacked, "index.html"), "utf8"),
-      fs.readFileSync(path.join(unpacked, "ghpages.html"), "utf8"),
+    // index.html is the ghpages.html shell rendered with the home page's
+    // metadata and text, and each page has its own (haxtheweb/issues#3352)
+    const indexHtml = fs.readFileSync(
+      path.join(unpacked, "index.html"),
+      "utf8",
     );
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(unpacked, "site.json"), "utf8"),
+    );
+    assert.ok(indexHtml.includes("<haxcms-site-builder"));
+    assert.ok(indexHtml.includes("<main>"));
+    assert.ok(indexHtml.includes("application/ld+json"));
+    const homeTitle = /<title>([^<]*)<\/title>/.exec(indexHtml);
+    assert.ok(
+      homeTitle && homeTitle[1].includes(manifest.title),
+      "the site's title, not the shell's",
+    );
+    // a page gets its own folder only when it is published: unpublished
+    // content stays out of what a static host serves
+    for (const item of manifest.items) {
+      const published = !(item.metadata && item.metadata.published === false);
+      assert.equal(
+        fs.existsSync(path.join(unpacked, item.slug, "index.html")),
+        published,
+        item.slug,
+      );
+    }
     assert.equal(fs.existsSync(path.join(unpacked, "build")), false);
     // llms-full.txt, exactly as the in-browser HAXcms answers it
     const served = await frame.evaluate(

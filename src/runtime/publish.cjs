@@ -19,8 +19,15 @@
  *   anonymous view; private sites have none). A llms-full.txt the site
  *   already has is kept as it is, like the CLI does
  *
- * Nothing in the site is changed: the index.html swap and llms-full.txt
- * happen in the packed copy only.
+ * - rendered pages (haxtheweb/issues#3352): the pages haxcms-nodejs
+ *   renders for a static host (renderStaticPages: the home page and
+ *   <slug>/index.html per published page, each with its metadata and
+ *   text), as the CLI publishes them. The rendered home page replaces the
+ *   ghpages.html copy; every other page goes in only where the site has no
+ *   file of that name
+ *
+ * Nothing in the site is changed: the index.html swap, llms-full.txt and
+ * the rendered pages happen in the packed copy only.
  *
  * The pack is a gzipped tarball whose entries sit under "./", the layout
  * `tar czf - -C <site> .` makes and the Surge deploy API expects.
@@ -228,13 +235,24 @@ async function gzip(bytes) {
  * The files a static host gets for one site, [{ path, bytes }] sorted: the
  * site's files (collectSiteFiles) plus extras ([{ path, bytes }],
  * generated files), each extra only where the site has no file of that
- * name.
+ * name, plus rendered pages ([{ path, bytes }]): "index.html" replaces the
+ * shell, the others go in where the site has no file of that name.
  */
-function publishFiles(fs, path, siteDir, extras) {
+function publishFiles(fs, path, siteDir, extras, pages) {
   const files = collectSiteFiles(fs, path, siteDir);
   for (const extra of extras || []) {
     if (!files.some((file) => file.path === extra.path)) {
       files.push(extra);
+    }
+  }
+  for (const page of pages || []) {
+    const existing = files.find((file) => file.path === page.path);
+    if (page.path === "index.html") {
+      if (existing) {
+        existing.bytes = page.bytes;
+      }
+    } else if (!existing) {
+      files.push(page);
     }
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -245,8 +263,8 @@ function publishFiles(fs, path, siteDir, extras) {
  * Pack one site folder for a static host: { files, bytes, body } where body
  * is the gzipped tarball as an ArrayBuffer.
  */
-async function packSite(fs, path, siteDir, extras) {
-  const files = publishFiles(fs, path, siteDir, extras);
+async function packSite(fs, path, siteDir, extras, pages) {
+  const files = publishFiles(fs, path, siteDir, extras, pages);
   if (!files.some((file) => file.path === "index.html")) {
     throw new Error("this site has no index.html to publish");
   }
