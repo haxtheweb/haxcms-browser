@@ -8,9 +8,9 @@ Use it when someone wants to see or try HAX quickly, or to build and publish a s
 
 ## Docs
 
-- [README](https://github.com/haxtheweb/haxcms-browser/blob/main/README.md): what it does, saving, publishing, and limits
-- [Publishing providers](https://github.com/haxtheweb/haxcms-browser/blob/main/docs/providers.md): setting up sign-in and publishing for your own copy
-- [AGENTS.md](https://github.com/haxtheweb/haxcms-browser/blob/main/AGENTS.md): rules for agents working on this code
+- [README](https://raw.githubusercontent.com/haxtheweb/haxcms-browser/main/README.md): what it does, saving, publishing, and limits
+- [Publishing providers](https://raw.githubusercontent.com/haxtheweb/haxcms-browser/main/docs/providers.md): setting up sign-in and publishing for your own copy
+- [AGENTS.md](https://raw.githubusercontent.com/haxtheweb/haxcms-browser/main/AGENTS.md): rules for agents working on this code
 
 ## HAX
 
