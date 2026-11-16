@@ -170,12 +170,13 @@ test("HTTP API: browser and Node give the same results", async () => {
   )) {
     assert.equal(step.siteJsonUnchanged, true, step.step);
   }
-  // the new site's starter page stays; outline saves don't delete it
+  // the new site's starter page (the default-starter skeleton's "Home",
+  // haxcms-nodejs#290) stays; outline saves don't delete it
   assert.deepEqual(browserResult.outline, [
     "A < (root) #1",
     "B < (root) #0",
     "C < A #0",
-    "Welcome < (root) #0",
+    "Home < (root) #0",
   ]);
   // a password hash made in the browser verifies on a Node server
   assert.equal(nodeResult.verifiesBrowserHash, true);
