@@ -288,7 +288,10 @@ test("a callback without this browser's cookie is not finished", async () => {
     // a cookie for another sign-in
     [{ code: "c", state: "x".repeat(32) }, cookie],
     // tampered with
-    [{ code: "c", state: stateValue }, name + "=" + value.replace(/.$/, "A")],
+    [
+      { code: "c", state: stateValue },
+      name + "=" + value.slice(0, -1) + (value.endsWith("A") ? "B" : "A"),
+    ],
     // too old
     [{ code: "c", state: stateValue }, name + "=" + old],
     // not a state at all
