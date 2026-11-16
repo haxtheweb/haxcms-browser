@@ -68,8 +68,6 @@ const HOST_FILES = [
   "publish-hosts.js",
   "auth.js",
   "accounts.js",
-  "oauth/callback.html",
-  "oauth/callback.js",
   "sw.js",
   "haxcms-worker.js",
   "haxcms-snapshot.json",

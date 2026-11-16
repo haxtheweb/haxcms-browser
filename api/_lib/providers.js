@@ -8,20 +8,23 @@
  *   HAX_OAUTH_<ID>_CLIENT_ID       public: also given to the page
  *   HAX_OAUTH_<ID>_CLIENT_SECRET   secret: only ever used here
  *
- * A provider with no client id (or secret) set is simply not offered.
+ * A provider with no client id (or secret) set is simply not offered, and
+ * none is offered until HAX_OAUTH_STATE_SECRET is set (api/_lib/state.js).
  * Setup steps for every provider are in docs/providers.md.
  *
  * Rules this file keeps:
  * - Every address the broker calls is a fixed https URL written here. What a
  *   caller sends only picks a provider from this list by name.
  * - Secrets never leave this process: GET /api/oauth/providers returns only
- *   the public parts (client id, where to send the person, scopes).
+ *   each provider's name, what it is used for and an install link.
  *
  * uses: what the page may use a provider for
  *   identity  sign in, and fill in a new site's author
  *   storage   keep sites in the provider's storage
  *   publish   publish sites to the provider
  */
+
+const { secret } = require("./state.js");
 
 const PROVIDERS = {
   github: {
@@ -132,7 +135,7 @@ const PROVIDERS = {
   apple: {
     label: "Apple",
     uses: ["identity"],
-    // Apple posts the sign-in back to the broker itself (api/oauth/apple.js)
+    // Apple posts the sign-in back as a form (response_mode=form_post)
     authorizeUrl: "https://appleid.apple.com/auth/authorize",
     tokenUrl: "https://appleid.apple.com/auth/token",
     scopes: ["name", "email"],
@@ -153,6 +156,7 @@ function env(id, name) {
 // one of ours or this deployment has not configured it
 function provider(id) {
   if (
+    !secret() ||
     typeof id !== "string" ||
     !Object.prototype.hasOwnProperty.call(PROVIDERS, id)
   ) {
@@ -189,18 +193,6 @@ function publicList() {
       id,
       label: found.label,
       uses: found.uses.slice(),
-      clientId: found.clientId,
-      authorizeUrl:
-        found.authorizeUrl === "integration"
-          ? "https://vercel.com/integrations/" +
-            encodeURIComponent(found.extra.INTEGRATION) +
-            "/new"
-          : found.authorizeUrl,
-      scopes: found.scopes.slice(),
-      pkce: !!found.pkce,
-      params: Object.assign({}, found.params || {}),
-      // Apple posts back to the broker; the rest come back to the page
-      callback: id === "apple" ? "broker" : "page",
       installUrl:
         id === "github" && /^[\w-]{1,100}$/.test(found.extra.APP_SLUG || "")
           ? "https://github.com/apps/" +

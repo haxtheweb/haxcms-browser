@@ -6,29 +6,30 @@ Nothing here is needed to run haxcms-browser. A service whose variables aren't s
 
 ## How it fits together
 
-- The page signs in with a popup. It sends the person to the service with a random `state` (and a PKCE challenge where the service takes one). The service sends them back to the page's `oauth/callback.html`.
-- The page's **broker** (`api/`, Vercel functions deployed with the site) trades the code for tokens with the app's client secret. The broker keeps nothing: no database, no logs of tokens. It only answers its own origin.
+- The page signs in with a popup that opens the page's **broker** (`api/`, Vercel functions deployed with the site) at `/api/oauth/start`. The broker sends the person to the service with a random `state` (and a PKCE challenge where the service takes one), and keeps those in a short-lived signed cookie, so it stores nothing.
+- The service sends the person back to the broker's `/api/oauth/callback`. The broker checks the state against that cookie and trades the code for tokens with the app's client secret. It hands the tokens to the page that started the sign-in, sealed with a key only that page has (`/api/oauth/done`). The broker keeps nothing: no database, no logs of tokens.
 - From then on the page calls the service's API **directly from the browser**. Storage and publishing never pass through the broker, so there is no size limit of ours (Surge is the exception, see below).
 - Tokens stay in the browser tab: in memory, plus `sessionStorage` so a reload doesn't sign people out. Closing the tab forgets them.
 
 Code: `api/_lib/providers.js` (the list), `api/oauth/*` (the broker routes), `src/site/auth.js` (sign-in in the page), `src/runtime/remote.cjs` (cloud storage), `src/site/publish-hosts.js` (publishing).
 
-## The two addresses every app needs
+## The one address every app needs
 
-For a deployment at `https://browser.hax.cloud` (replace with yours):
+For a deployment at `https://browser.hax.cloud` (replace with yours), every service, Apple included, sends people back to:
 
-| What                                                   | Address                                         |
-| ------------------------------------------------------ | ----------------------------------------------- |
-| Callback (redirect URI) for every service except Apple | `https://browser.hax.cloud/oauth/callback.html` |
-| Apple's return URL                                     | `https://browser.hax.cloud/api/oauth/apple`     |
+```
+https://browser.hax.cloud/api/oauth/callback
+```
 
-The address must match exactly (scheme, host, path, no trailing slash). The broker refuses any other redirect URI.
+Services check it matches exactly (scheme, host, path, no trailing slash).
 
 **Preview deployments** have their own host names, so sign-in only works there if you also register the preview address. The simplest way to test the real thing is on the production domain.
 
 ## Environment variables
 
 Set these in the Vercel project (Settings → Environment Variables), for Production (and Preview if you registered preview addresses), then redeploy.
+
+First, once for the whole deployment: **`HAX_OAUTH_STATE_SECRET`**, a long random value the broker signs each sign-in's cookie with. Make one with `openssl rand -base64 48`. Without it (or if it is shorter than 32 characters) no service is offered. Changing it only cancels sign-ins that are in progress.
 
 | Service   | Variables                                                                                                       | Offers                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -44,7 +45,7 @@ Set these in the Vercel project (Settings → Environment Variables), for Produc
 | Apple     | `HAX_OAUTH_APPLE_CLIENT_ID`, `HAX_OAUTH_APPLE_TEAM_ID`, `HAX_OAUTH_APPLE_KEY_ID`, `HAX_OAUTH_APPLE_PRIVATE_KEY` | sign-in                                    |
 | (any)     | `HAX_BROKER_ALLOWED_ORIGINS` (optional, comma-separated)                                                        | lets other origins you run use this broker |
 
-Client IDs are public (the page gets them from `GET /api/oauth/providers`). Secrets and keys are only read by the broker. Never commit them.
+Secrets and keys are only read by the broker, and the page only learns each service's name (`GET /api/oauth/providers`). Never commit them.
 
 To check what a deployment offers: open `https://<deployment>/api/oauth/providers`. It lists the configured services without their secrets.
 
@@ -57,7 +58,7 @@ A **GitHub App** rather than an OAuth App, so people grant access only to the re
 1. Go to **Settings → Developer settings → GitHub Apps → New GitHub App**. For the HAX project use the haxtheweb organization's settings so the app belongs to the org.
 2. **GitHub App name**: e.g. `HAX Publish`. Its URL name (slug) is what you'll put in `HAX_OAUTH_GITHUB_APP_SLUG`.
 3. **Homepage URL**: the deployment, e.g. `https://browser.hax.cloud`.
-4. **Callback URL**: `https://browser.hax.cloud/oauth/callback.html`.
+4. **Callback URL**: `https://browser.hax.cloud/api/oauth/callback`.
 5. **Expire user authorization tokens**: on (the broker renews them with the refresh token).
 6. **Request user authorization (OAuth) during installation**: off. People install the app from the link HAXcms shows, then sign in from HAXcms.
 7. **Webhook**: turn **Active** off. HAX doesn't use webhooks.
@@ -77,7 +78,7 @@ To check when you test: whether a repository the app creates is reachable when t
 ## GitLab (sign-in, GitLab Pages)
 
 1. Go to **gitlab.com → your avatar → Edit profile → Applications** (or a group's **Settings → Applications** for a group-owned app).
-2. **Name**: `HAX`. **Redirect URI**: `https://browser.hax.cloud/oauth/callback.html`.
+2. **Name**: `HAX`. **Redirect URI**: `https://browser.hax.cloud/api/oauth/callback`.
 3. **Confidential**: checked.
 4. **Scopes**: `read_user` and `api` (`api` is needed to create the project and commit the site).
 5. Save. Copy the **Application ID** into `HAX_OAUTH_GITLAB_CLIENT_ID` and the **Secret** into `HAX_OAUTH_GITLAB_CLIENT_SECRET`.
@@ -89,7 +90,7 @@ Limitation to know: GitLab.com requires new accounts to verify their identity be
 ## Codeberg (Codeberg Pages)
 
 1. Go to **codeberg.org → Settings → Applications → Manage OAuth2 applications**.
-2. **Application name**: `HAX`. **Redirect URIs**: `https://browser.hax.cloud/oauth/callback.html`.
+2. **Application name**: `HAX`. **Redirect URIs**: `https://browser.hax.cloud/api/oauth/callback`.
 3. **Confidential client**: checked.
 4. Create. Copy the **Client ID** and **Client secret** into the variables.
 
@@ -100,7 +101,7 @@ How people use it: HAXcms makes a public repository named after the site, adds t
 ## Netlify (publishing)
 
 1. Go to **app.netlify.com → User settings → Applications → OAuth applications → New OAuth app**.
-2. **Application name**: `HAX`. **Redirect URI**: `https://browser.hax.cloud/oauth/callback.html`.
+2. **Application name**: `HAX`. **Redirect URI**: `https://browser.hax.cloud/api/oauth/callback`.
 3. Save. Copy the **Client ID** and **Secret** into the variables.
 
 How people use it: HAXcms makes a Netlify site named after the site (or lets Netlify pick a free name if that one is taken). It deploys by file digest, so republishing uploads only what changed. Each person's own Netlify plan limits apply.
@@ -111,7 +112,7 @@ Publishing needs a **Vercel Integration**. "Sign in with Vercel" alone only give
 
 1. Go to the **Vercel Integrations Console** (Dashboard → Integrations → Integration Console) and **Create** an integration.
 2. **Name / URL slug**: e.g. `hax-publish`. The slug goes in `HAX_OAUTH_VERCEL_INTEGRATION`.
-3. **Redirect URL**: `https://browser.hax.cloud/oauth/callback.html`.
+3. **Redirect URL**: `https://browser.hax.cloud/api/oauth/callback`.
 4. **API Scopes**: Deployments **Read and write**, Projects **Read and write**, and User **Read** (for the account name).
 5. Save. Copy the **Client (Integration) ID** and **Client Secret** into the variables.
 
@@ -126,7 +127,7 @@ To check when you test: whether a private (not Marketplace-listed) integration c
 3. **Google Auth Platform → Branding** (OAuth consent screen): app name `HAX`, support email, home page, privacy policy link. **Audience**: External.
 4. **Data Access** (scopes): `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`, `.../auth/drive.file`. `drive.file` only reaches files HAXcms itself makes, which keeps the request minimal.
 5. While the app is in **Testing**, add test users (only they can sign in). **Publish** the app when you're ready for everyone.
-6. **Clients → Create client → Web application**. **Authorized redirect URIs**: `https://browser.hax.cloud/oauth/callback.html`.
+6. **Clients → Create client → Web application**. **Authorized redirect URIs**: `https://browser.hax.cloud/api/oauth/callback`.
 7. Copy the **Client ID** and **Client secret** into the variables.
 
 How people use it: sign in fills in their name, email and picture as the author of new sites. **Save to the cloud → Use Google Drive** keeps sites in a `HAXcms sites` folder in their Drive.
@@ -135,7 +136,7 @@ How people use it: sign in fills in their name, email and picture as the author 
 
 1. In **Microsoft Entra admin center → App registrations → New registration**.
 2. **Supported account types**: _Accounts in any organizational directory and personal Microsoft accounts_.
-3. **Redirect URI**: platform **Web** (not "Single-page application"), `https://browser.hax.cloud/oauth/callback.html`. It has to be Web because the broker finishes the sign-in with a secret.
+3. **Redirect URI**: platform **Web** (not "Single-page application"), `https://browser.hax.cloud/api/oauth/callback`. It has to be Web because the broker finishes the sign-in with a secret.
 4. **Certificates & secrets → New client secret**. Note its expiry: secrets last at most two years, so put a reminder to rotate it.
 5. **API permissions → Microsoft Graph → Delegated**: `openid`, `profile`, `email`, `offline_access`, `User.Read`, `Files.ReadWrite.AppFolder`.
 6. Copy the **Application (client) ID** and the secret **Value** into the variables.
@@ -149,7 +150,7 @@ For hax.psu.edu's Azure sign-in (an open question in #3341): this registration i
 1. Go to the **Dropbox App Console → Create app**.
 2. **Scoped access**, **App folder** (HAXcms only sees `Apps/<app name>`). Name: `HAX` (must be unique on Dropbox; e.g. `HAX sites`).
 3. **Permissions** tab: `account_info.read`, `files.metadata.read`, `files.content.read`, `files.content.write`. **Submit**.
-4. **Settings** tab: **Redirect URIs**: add `https://browser.hax.cloud/oauth/callback.html`.
+4. **Settings** tab: **Redirect URIs**: add `https://browser.hax.cloud/api/oauth/callback`.
 5. Copy the **App key** into `HAX_OAUTH_DROPBOX_CLIENT_ID` and the **App secret** into `HAX_OAUTH_DROPBOX_CLIENT_SECRET`.
 
 A new Dropbox app is in development status with a limit on how many people can link it. Apply for production in the App Console before a wide launch.
@@ -157,7 +158,7 @@ A new Dropbox app is in development status with a limit on how many people can l
 ## Box (cloud storage)
 
 1. Go to the **Box Developer Console → My Apps → Create New App → Custom App → User Authentication (OAuth 2.0)**.
-2. **Configuration → OAuth 2.0 Redirect URIs**: `https://browser.hax.cloud/oauth/callback.html`.
+2. **Configuration → OAuth 2.0 Redirect URIs**: `https://browser.hax.cloud/api/oauth/callback`.
 3. **Application Scopes**: _Read all files and folders stored in Box_ and _Write all files and folders stored in Box_.
 4. **CORS Domains**: `https://browser.hax.cloud`. Box only answers browser calls from listed origins, so this one is required.
 5. Copy the **Client ID** and **Client Secret** into the variables.
@@ -170,7 +171,7 @@ Needs an **Apple Developer Program** membership.
 
 1. **Certificates, Identifiers & Profiles → Identifiers**: create an **App ID** with **Sign in with Apple** turned on.
 2. Create a **Services ID** (e.g. `cloud.hax.browser`). This is `HAX_OAUTH_APPLE_CLIENT_ID`.
-3. Configure the Services ID's **Sign in with Apple**: primary App ID from step 1, **Domains**: `browser.hax.cloud`, **Return URLs**: `https://browser.hax.cloud/api/oauth/apple` (the broker's address, because Apple posts the result back as a form).
+3. Configure the Services ID's **Sign in with Apple**: primary App ID from step 1, **Domains**: `browser.hax.cloud`, **Return URLs**: `https://browser.hax.cloud/api/oauth/callback` (Apple posts the result back to it as a form).
 4. **Keys**: create a key with **Sign in with Apple** for that App ID, and download the `.p8` file (you can only download it once). Its **Key ID** is `HAX_OAUTH_APPLE_KEY_ID`.
 5. Your **Team ID** (top right of the developer site) is `HAX_OAUTH_APPLE_TEAM_ID`.
 6. Put the whole `.p8` file's contents in `HAX_OAUTH_APPLE_PRIVATE_KEY`. Line breaks may be written as `\n`.

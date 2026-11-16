@@ -141,30 +141,18 @@ function basic(user, pass) {
   return "Basic " + Buffer.from(user + ":" + pass, "utf8").toString("base64");
 }
 
-// The page's sign-in landing address on an allowed origin
-// (src/site/oauth/callback.html), or null: the one redirect_uri the broker
-// will finish a sign-in for.
-function validRedirect(req, value) {
-  if (typeof value !== "string" || value.length > 2048) {
-    return null;
+// This deployment's own origin, from the Host it was reached at: https,
+// except plain http for `vercel dev` and local tests. "" when Host is not a
+// plain host name.
+function ownOrigin(req) {
+  const host = String(req.headers.host || "");
+  if (!/^[a-z0-9.-]{1,253}(:\d{1,5})?$/i.test(host)) {
+    return "";
   }
-  let target;
-  try {
-    target = new URL(value);
-  } catch (e) {
-    return null;
-  }
-  if (
-    allowedOrigins(req).indexOf(target.origin) === -1 ||
-    !/\/oauth\/callback\.html$/.test(target.pathname) ||
-    target.search ||
-    target.hash ||
-    target.username ||
-    target.password
-  ) {
-    return null;
-  }
-  return target.href;
+  return (
+    (/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ? "http://" : "https://") +
+    host
+  );
 }
 
 // Read a small JSON body; null when it isn't one.
@@ -182,7 +170,7 @@ async function readJson(req, limit) {
 module.exports = {
   MAX_BODY_BYTES,
   allowedOrigins,
-  validRedirect,
+  ownOrigin,
   readJson,
   originAllowed,
   sendJson,
