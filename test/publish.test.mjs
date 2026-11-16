@@ -30,6 +30,8 @@ function seed() {
     "wc-registry.json": "{}",
     ".htaccess": "deny",
     ".github/workflows/x.yml": "x",
+    ".well-known/agent-skills/index.json": "{}",
+    "pages/a/.well-known/x.txt": "only at the top",
     "node_modules/x/index.js": "x",
     "pages/b/node_modules/y.js": "y",
     "dist/out.js": "dist",
@@ -55,6 +57,7 @@ test("only what the HAX CLI publishes is packed, with ghpages.html as index.html
   assert.deepEqual(
     files.map((file) => file.path),
     [
+      ".well-known/agent-skills/index.json",
       "CNAME",
       "assets/manifest.json",
       "custom/build/custom.js",
@@ -89,7 +92,7 @@ test("the tarball unpacks to the same files, under ./", async () => {
   fs.mkdirSync(path.posix.dirname(SITE + "/" + long), { recursive: true });
   fs.writeFileSync(SITE + "/" + long, "<p>deep</p>");
   const packed = await publish.packSite(fs, path.posix, SITE);
-  assert.equal(packed.files, 9);
+  assert.equal(packed.files, 10);
   const bytes = new Uint8Array(packed.body);
   assert.equal(bytes[0], 0x1f);
   assert.equal(bytes[1], 0x8b);
@@ -122,6 +125,10 @@ test("the tarball unpacks to the same files, under ./", async () => {
     );
     assert.equal(nodeFs.existsSync(path.join(out, "build")), false);
     assert.equal(nodeFs.existsSync(path.join(out, ".htaccess")), false);
+    // agent discovery files go with the site
+    assert.ok(
+      nodeFs.existsSync(path.join(out, ".well-known/agent-skills/index.json")),
+    );
   } finally {
     nodeFs.rmSync(dir, { recursive: true, force: true });
   }
@@ -162,12 +169,12 @@ test("generated files are added only where the site has none", async () => {
   const fs = seed();
   const extra = { path: "llms-full.txt", bytes: Buffer.from("# Site One\n") };
   const added = await publish.packSite(fs, path.posix, SITE, [extra]);
-  assert.equal(added.files, 9);
+  assert.equal(added.files, 10);
   fs.writeFileSync(SITE + "/llms-full.txt", "# the site's own\n");
   const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "publish-test-"));
   try {
     const kept = await publish.packSite(fs, path.posix, SITE, [extra]);
-    assert.equal(kept.files, 9);
+    assert.equal(kept.files, 10);
     const archive = path.join(dir, "site.tar.gz");
     nodeFs.writeFileSync(archive, new Uint8Array(kept.body));
     const out = spawnSync("tar", ["-xzOf", archive, "./llms-full.txt"], {
