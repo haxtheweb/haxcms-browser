@@ -68,5 +68,20 @@
       "eslint --fix --no-warn-ignored",
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "image-size": "^2.0.4",
+    "twig": {
+      "minimatch": "^11.0.1"
+    },
+    "editorconfig": {
+      "minimatch": "^11.0.1"
+    },
+    "readdir-glob": {
+      "minimatch": "^11.0.1"
+    },
+    "js-beautify": {
+      "glob": "^14.0.2"
+    }
   }
 }
