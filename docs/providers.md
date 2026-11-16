@@ -70,8 +70,11 @@ A **GitHub App** rather than an OAuth App, so people grant access only to the re
 9. **Account permissions**: Email addresses: **Read-only** (fills in the author's email).
 10. **Where can this GitHub App be installed?**: **Any account**.
 11. Create the app, then **Generate a new client secret**. Copy the **Client ID** and the secret into the variables.
+12. **Make the app public**: the app's settings → **Advanced** → **Danger zone** → **Make public**. Check this even if you chose "Any account" in step 10: an app made under an organization can still end up private. A private app can only be installed on the account that owns it (e.g. the haxtheweb org), so nobody can install it on their own account and publishing fails for them. "Public" only means any account _can_ install it; it reaches nothing until someone does.
 
 How people use it: the first time they publish to GitHub Pages, HAXcms asks them to install the app on their account (the link comes from `HAX_OAUTH_GITHUB_APP_SLUG`). Then HAXcms makes a public repository named after the site, commits it with `.nojekyll`, and turns Pages on. The site appears at `https://<user>.github.io/<site>/` after GitHub's first build (about a minute).
+
+If publishing says to install the app but the install page doesn't offer your own account, the app is still private: do step 12.
 
 To check when you test: whether a repository the app creates is reachable when the person installed the app on **Only select repositories**. If publishing fails right after the repository is made, have them choose **All repositories** in the app's installation settings, and tell us so we can document it.
 
