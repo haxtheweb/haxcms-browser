@@ -122,7 +122,7 @@ The host and name (or Surge address) last used are remembered for each site in t
 
 ## Sign-in and cloud storage
 
-**Sign in** (`src/site/accounts.js`, `src/site/auth.js`) opens the service in a popup. The broker finishes the sign-in with the app's client secret (`api/oauth/token`), and the page fetches the person's profile from the service. When someone has signed in, every site they make next gets their name, email and picture as its author, saved through HAXcms's own SEO settings route right after the site is created. It then gets an About page with their name and picture, unless the site already has a page called About (or About me, About us), and, when the site is a blog (the blog skeleton or the Simple Blog, Haxor Slevin or VHS Blog theme), a short first post titled "Hello from" their name. Both are added through HAXcms's items API, the request the editor's Add page makes; a skeleton's own pages are never changed. The email is not put on the About page.
+**Sign in** (`src/site/accounts.js`, `src/site/auth.js`) opens the service in a popup. The broker runs the sign-in (`api/oauth/start`, `api/oauth/callback`) and finishes it with the app's client secret, and the page fetches the person's profile from the service. When someone has signed in, every site they make next gets their name, email and picture as its author, saved through HAXcms's own SEO settings route right after the site is created. It then gets an About page with their name and picture, unless the site already has a page called About (or About me, About us), and, when the site is a blog (the blog skeleton or the Simple Blog, Haxor Slevin or VHS Blog theme), a short first post titled "Hello from" their name. Both are added through HAXcms's items API, the request the editor's Add page makes; a skeleton's own pages are never changed. The email is not put on the About page.
 
 **Save to the cloud** moves HAXcms onto cloud storage (`src/runtime/remote.cjs`): Google Drive (a `HAXcms sites` folder, `drive.file` scope), OneDrive (the app's own folder), Dropbox (the app folder), Box (a `HAXcms sites` folder) or a WebDAV server. It plugs into the same `storage.cjs` a folder on the computer uses, so the same saving rules hold: a change is answered only after it is written, and a failed upload leaves the cloud copy as it was. The Worker asks the page for current tokens and renews an expired one once.
 
@@ -138,15 +138,16 @@ Small [Vercel functions](https://vercel.com/docs/functions) deployed with the si
 | `POST /api/surge/token`         | Surge email and password → token                                      |
 | `PUT /api/surge/deploy?domain=` | gzipped site tarball + `Authorization: Bearer <token>` → Surge        |
 | `GET /api/oauth/providers`      | the sign-in services set up here, public parts only                   |
-| `POST /api/oauth/token`         | a sign-in's code (+ PKCE verifier) → tokens, with the client secret   |
+| `GET /api/oauth/start`          | the sign-in popup opens here; sends the person to the service         |
+| `GET/POST /api/oauth/callback`  | every service sends people back here; code → tokens, client secret    |
+| `GET /api/oauth/done`           | hands the sealed result to the page that started the sign-in          |
 | `POST /api/oauth/refresh`       | a refresh token → a new access token                                  |
-| `POST /api/oauth/apple`         | where Sign in with Apple posts back; sends name and email to the page |
 
 Rules it keeps (`api/_lib/broker.js`):
 
 - Only the deployment's own origin, or origins listed in `HAX_BROKER_ALLOWED_ORIGINS` (comma-separated), may call it. It is not a public proxy.
 - Requests only go to fixed addresses written in the code (Surge, each sign-in service's token endpoint); the domain a caller sends is validated as a hostname and used as one path segment, and a provider name only picks from the list.
-- A sign-in is finished only for the page's own `oauth/callback.html` on an allowed origin.
+- A sign-in is finished only when its state matches the signed cookie `api/oauth/start` set in the same browser (`HAX_OAUTH_STATE_SECRET`), and the tokens go back sealed with a key only the page that started it has.
 - Passwords, tokens and client secrets never go into a log, a response header or an error message; `GET /api/oauth/providers` never returns secrets.
 - Sites over 4 MB packed are refused (Vercel functions take at most 4.5 MB). Surge's API sends no CORS headers, so a browser can't reach it without the broker: the dialog states the limit up front and, for bigger sites, stops before uploading and points to Download site and the HAX CLI, which has no size limit.
 

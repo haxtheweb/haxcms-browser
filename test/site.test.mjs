@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { startPagesServer } from "./helpers/pages-server.mjs";
-import { redirectSurge } from "./helpers/surge-stand-in.mjs";
+import { redirectHosts, redirectSurge } from "./helpers/surge-stand-in.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = "smoke-site";
@@ -998,30 +998,47 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
 // ---- signing in (haxtheweb/issues#3341) ------------------------------------
 
 test("Sign in runs the provider in a popup and fills in new sites' author", async () => {
-  // a stand-in broker: one provider, whose sign-in page answers at once
+  // the real broker routes, with GitHub's sign-in page and token endpoint
+  // stood in for: the sign-in page sends the person straight back
+  const require = createRequire(import.meta.url);
+  const oauthEnv = {
+    HAX_OAUTH_GITHUB_CLIENT_ID: "test-client",
+    HAX_OAUTH_GITHUB_CLIENT_SECRET: "test-secret",
+    HAX_OAUTH_STATE_SECRET: "e2e-state-secret-0123456789abcdefghijklmnop",
+  };
+  Object.assign(process.env, oauthEnv);
+  const routes = {
+    "/api/oauth/providers": require("../api/oauth/providers.js"),
+    "/api/oauth/start": require("../api/oauth/start.js"),
+    "/api/oauth/callback": require("../api/oauth/callback.js"),
+    "/api/oauth/done": require("../api/oauth/done.js"),
+  };
+  const origin = new URL(server.url).origin;
+  const restoreFetch = redirectHosts({
+    "https://github.com": origin + "/api/test-github",
+  });
   const tokenRequests = [];
   server.setApi((req, res) => {
-    const url = new URL(req.url, server.url);
-    if (url.pathname === "/api/oauth/providers") {
-      res.setHeader("content-type", "application/json");
-      res.end(
-        JSON.stringify({
-          providers: [
-            {
-              id: "github",
-              label: "GitHub",
-              uses: ["identity", "publish"],
-              clientId: "test-client",
-              authorizeUrl: new URL("/api/test-authorize", server.url).href,
-              scopes: [],
-              pkce: true,
-              params: {},
-              callback: "page",
-              installUrl: "",
-            },
-          ],
-        }),
-      );
+    const url = new URL(req.url, origin);
+    if (url.pathname === "/api/oauth/start") {
+      // send the popup to the stand-in instead of github.com
+      const setHeader = res.setHeader.bind(res);
+      res.setHeader = (name, value) =>
+        setHeader(
+          name,
+          String(name).toLowerCase() === "location"
+            ? String(value).replace(
+                "https://github.com/login/oauth/authorize",
+                origin + "/api/test-authorize",
+              )
+            : value,
+        );
+    }
+    if (Object.prototype.hasOwnProperty.call(routes, url.pathname)) {
+      Promise.resolve(routes[url.pathname](req, res)).catch((e) => {
+        res.statusCode = 500;
+        res.end(String(e));
+      });
       return;
     }
     if (url.pathname === "/api/test-authorize") {
@@ -1034,11 +1051,13 @@ test("Sign in runs the provider in a popup and fills in new sites' author", asyn
       res.end();
       return;
     }
-    if (url.pathname === "/api/oauth/token") {
+    if (url.pathname === "/api/test-github/login/oauth/access_token") {
       const chunks = [];
       req.on("data", (chunk) => chunks.push(chunk));
       req.on("end", () => {
-        tokenRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+        tokenRequests.push(
+          new URLSearchParams(Buffer.concat(chunks).toString()),
+        );
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ access_token: "gho_test", expires_in: 3600 }));
       });
@@ -1103,12 +1122,16 @@ test("Sign in runs the provider in a popup and fills in new sites' author", asyn
       await host.$eval("#signin-button", (el) => el.textContent.trim()),
       "Ada Lovelace",
     );
-    // the code went to the broker with the PKCE verifier and this page's
-    // own callback address
+    // the broker finished it with the client secret, the PKCE verifier and
+    // its own callback address
     assert.equal(tokenRequests.length, 1);
-    assert.equal(tokenRequests[0].code, "test-code");
-    assert.match(tokenRequests[0].code_verifier, /^[\w-]{43,128}$/);
-    assert.match(tokenRequests[0].redirect_uri, /\/oauth\/callback\.html$/);
+    assert.equal(tokenRequests[0].get("code"), "test-code");
+    assert.equal(tokenRequests[0].get("client_secret"), "test-secret");
+    assert.match(tokenRequests[0].get("code_verifier"), /^[\w-]{43,128}$/);
+    assert.equal(
+      tokenRequests[0].get("redirect_uri"),
+      origin + "/api/oauth/callback",
+    );
     // the token stays in this tab: sessionStorage, never localStorage
     const kept = await host.evaluate(() => ({
       session: JSON.stringify(Object.assign({}, globalThis.sessionStorage)),
@@ -1275,6 +1298,10 @@ test("Sign in runs the provider in a popup and fills in new sites' author", asyn
     );
   } finally {
     server.setApi(null);
+    restoreFetch();
+    for (const name of Object.keys(oauthEnv)) {
+      delete process.env[name];
+    }
   }
 });
 

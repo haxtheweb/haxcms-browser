@@ -2,20 +2,21 @@
  * Signing in to other services from the HAXcms page (haxtheweb/issues#3341).
  *
  * One sign-in flow for every provider the deployment's broker has set up
- * (GET api/oauth/providers): the page opens the provider in a popup with a
- * random state (and a PKCE challenge where the provider takes one), the
- * provider sends the person back to oauth/callback.html, and the broker
- * trades the code for tokens with the client secret only it knows
- * (POST api/oauth/token). From then on the page calls the provider's API
- * itself, straight from the browser.
+ * (GET api/oauth/providers). The page opens a popup at the broker's
+ * api/oauth/start with a random nonce and a key made for this one sign-in.
+ * The broker sends the person to the provider, the provider sends them back
+ * to api/oauth/callback, and the broker trades the code for tokens with the
+ * client secret only it knows. The popup ends on api/oauth/done, which hands
+ * the result, sealed with the page's key, back to this page. From then on
+ * the page calls the provider's API itself, straight from the browser.
  *
  * Tokens stay in this tab: in memory, and in sessionStorage so a reload of
  * the same tab doesn't sign people out (closing the tab forgets them). An
  * access token past its expiry is renewed with the refresh token
  * (POST api/oauth/refresh).
  *
- * Apple is the exception: it posts back to the broker (api/oauth/apple),
- * which sends only the person's name and email on to the callback page.
+ * Apple is used for sign-in only: the page gets the person's name and
+ * email, no token.
  *
  * shell.js creates this with HaxcmsAuth(); publish.js and the cloud storage
  * choice use it.
@@ -42,12 +43,35 @@
     return base64url(globalThis.crypto.getRandomValues(new Uint8Array(length)));
   }
 
-  async function challengeFor(verifier) {
-    const digest = await globalThis.crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(verifier),
+  function fromBase64url(text) {
+    const binary = atob(
+      String(text).replace(/-/g, "+").replace(/_/g, "/") +
+        "===".slice((String(text).length + 3) % 4),
     );
-    return base64url(new Uint8Array(digest));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  // open what api/oauth/callback sealed with this sign-in's key:
+  // iv (12 bytes) | ciphertext | tag
+  async function openBox(keyBytes, box) {
+    const bytes = fromBase64url(box);
+    const key = await globalThis.crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      "AES-GCM",
+      false,
+      ["decrypt"],
+    );
+    const plain = await globalThis.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: bytes.slice(0, 12) },
+      key,
+      bytes.slice(12),
+    );
+    return JSON.parse(new TextDecoder().decode(plain));
   }
 
   function load(key) {
@@ -175,15 +199,11 @@
 
   globalThis.HaxcmsAuth = function HaxcmsAuth() {
     const brokerBase = new URL("/api/", globalThis.location.origin);
-    const callbackUrl = new URL(
-      "oauth/callback.html",
-      new URL("./", globalThis.location.href),
-    ).href;
     let providers = null;
     // provider id -> { access_token, refresh_token, expires_at, team_id, user_id, profile }
     const sessions = new Map();
     const listeners = new Set();
-    // state -> { resolve, reject, timer }
+    // nonce -> { resolve, reject, timer }
     const waiting = new Map();
 
     function changed() {
@@ -197,14 +217,20 @@
     }
 
     function deliver(result) {
-      if (!result || typeof result.state !== "string") {
+      if (!result || typeof result !== "object") {
         return;
       }
-      const wait = waiting.get(result.state);
+      let nonce = typeof result.nonce === "string" ? result.nonce : "";
+      // a sign-in that failed before the broker knew whose it was: it can
+      // only be the one this page is waiting for, if there is just one
+      if (!nonce && result.error && waiting.size === 1) {
+        nonce = waiting.keys().next().value;
+      }
+      const wait = waiting.get(nonce);
       if (!wait) {
         return;
       }
-      waiting.delete(result.state);
+      waiting.delete(nonce);
       clearTimeout(wait.timer);
       wait.resolve(result);
     }
@@ -378,7 +404,7 @@
       return found ? found.label : id;
     }
 
-    function popup() {
+    function popup(url) {
       const width = 520;
       const height = 680;
       const left = Math.max(
@@ -392,7 +418,7 @@
           ((globalThis.outerHeight || height) - height) / 2,
       );
       return globalThis.open(
-        "about:blank",
+        url,
         "haxcms-sign-in",
         "popup,width=" +
           width +
@@ -411,91 +437,65 @@
      * the profile.
      */
     async function signIn(id) {
-      const win = popup();
+      const nonce = randomString(24);
+      const keyBytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
+      const start = new URL("oauth/start", brokerBase);
+      start.searchParams.set("provider", id);
+      start.searchParams.set("nonce", nonce);
+      start.searchParams.set("key", base64url(keyBytes));
+      const win = popup(start.href);
       try {
-        await list();
-        const spec = find(id);
-        if (!spec) {
-          throw new Error(id + " is not set up on this HAXcms");
-        }
         if (!win) {
           throw new Error(
             "The sign-in window was blocked. Allow pop-ups for this page and try again.",
           );
         }
-        const state = randomString(24);
-        const verifier = randomString(48);
-        const authorize = new URL(spec.authorizeUrl);
-        const params = authorize.searchParams;
-        params.set("state", state);
-        if (id !== "vercel") {
-          // Vercel's integration install page knows its own client and
-          // return address
-          params.set("client_id", spec.clientId);
-          params.set("response_type", "code");
-          params.set(
-            "redirect_uri",
-            spec.callback === "broker"
-              ? new URL("oauth/apple", brokerBase).href
-              : callbackUrl,
-          );
-        }
-        if (spec.scopes.length) {
-          params.set("scope", spec.scopes.join(" "));
-        }
-        if (spec.callback === "broker") {
-          params.set("response_mode", "form_post");
-        }
-        if (spec.pkce) {
-          params.set("code_challenge", await challengeFor(verifier));
-          params.set("code_challenge_method", "S256");
-        }
-        for (const key of Object.keys(spec.params || {})) {
-          params.set(key, spec.params[key]);
-        }
         const result = await new Promise((resolve, reject) => {
-          waiting.set(state, {
+          waiting.set(nonce, {
             resolve,
             reject,
             timer: setTimeout(() => {
-              waiting.delete(state);
+              waiting.delete(nonce);
               reject(new Error("The sign-in took too long. Try again."));
             }, WAIT_MS),
           });
-          win.location.href = authorize.href;
         });
-        if (result.error) {
+        if (!result.box) {
+          throw new Error(String(result.error || "The sign-in failed."));
+        }
+        let data;
+        try {
+          data = await openBox(keyBytes, result.box);
+        } catch (e) {
+          throw new Error("The sign-in could not be read. Try again.");
+        }
+        if (!data || data.error) {
           throw new Error(
-            result.error === "access_denied"
-              ? "The sign-in was cancelled."
-              : String(result.error_description || result.error),
+            String((data && data.error) || "The sign-in failed."),
           );
         }
+        await list();
         let session;
-        if (spec.callback === "broker") {
+        if (data.profile) {
           // Apple: a profile only
           session = {
             access_token: "apple",
             refresh_token: "",
             expires_at: 0,
             profile: {
-              name: result.name || "",
-              email: result.email || "",
+              name: String(data.profile.name || ""),
+              email: String(data.profile.email || ""),
               image: "",
-              login: result.email || "",
+              login: String(data.profile.email || ""),
             },
           };
+        } else if (
+          data.tokens &&
+          typeof data.tokens.access_token === "string"
+        ) {
+          session = fromTokens(data.tokens, null);
         } else {
-          const tokens = await broker("oauth/token", {
-            provider: id,
-            code: result.code,
-            redirect_uri: callbackUrl,
-            code_verifier: spec.pkce ? verifier : undefined,
-          });
-          if (id === "vercel" && result.teamId && !tokens.team_id) {
-            tokens.team_id = result.teamId;
-          }
-          session = fromTokens(tokens, null);
+          throw new Error("The sign-in failed.");
         }
         remember(id, session);
         if (!session.profile && PROFILES[id]) {
