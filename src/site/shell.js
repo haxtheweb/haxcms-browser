@@ -756,6 +756,122 @@
     }
   }
 
+  // --- an About page and a first post, from the sign-in ------------------
+  // After the author, a new site gets an About page with the person's name
+  // and picture when it has no About page of its own, and a short first
+  // post when it is a blog (the blog skeleton or a blog theme). Both are
+  // added through HAXcms's items API, the request the editor's Add page
+  // makes, so they are saved and sanitized like any page; the skeleton's own
+  // pages are never changed.
+  const BLOG_THEMES = ["simple-blog", "haxor-slevin", "vhs-blog-theme"];
+  const ABOUT_SLUGS = ["about", "about-me", "about-us"];
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function isAboutPage(item) {
+    const slug = String((item && item.slug) || "")
+      .split("/")
+      .pop();
+    const title = String((item && item.title) || "").trim();
+    return ABOUT_SLUGS.indexOf(slug) !== -1 || /^about( me| us)?$/i.test(title);
+  }
+
+  function starterPages(identity, manifest, skeleton) {
+    const name = identity.name;
+    const items = (manifest && manifest.items) || [];
+    const theme =
+      manifest && manifest.metadata && manifest.metadata.theme
+        ? manifest.metadata.theme.element
+        : "";
+    const pages = [];
+    if (!items.some(isAboutPage)) {
+      const picture = /^https:\/\//.test(identity.image || "")
+        ? '<p><img src="' +
+          escapeHtml(identity.image) +
+          '" alt="' +
+          escapeHtml(name) +
+          '" width="160" height="160" loading="lazy"></p>\n'
+        : "";
+      pages.push({
+        title: "About",
+        contents: picture + "<p>This site is by " + escapeHtml(name) + ".</p>",
+      });
+    }
+    if (skeleton === "blog" || BLOG_THEMES.indexOf(theme) !== -1) {
+      pages.push({
+        title: "Hello from " + name,
+        contents:
+          "<p>This is the first post on this site. Edit it to say hello, or delete it and write your own.</p>",
+      });
+    }
+    return pages;
+  }
+
+  async function addStarterPages(site) {
+    const identity = auth.identity();
+    if (!identity || !identity.name) {
+      return;
+    }
+    const read = await signedInRequest({
+      method: "GET",
+      url: "/_sites/" + encodeURIComponent(site.name) + "/site.json",
+      headers: {},
+    });
+    if (read.status !== 200 || !read.json) {
+      return;
+    }
+    const pages = starterPages(identity, read.json, site.skeleton);
+    if (!pages.length) {
+      return;
+    }
+    const tokens = await siteTokens(site.name);
+    for (const page of pages) {
+      const added = await signedInRequest({
+        method: "POST",
+        url: "/_sites/" + encodeURIComponent(site.name) + "/x/api/v1/items",
+        headers: Object.assign({ "content-type": "application/json" }, tokens),
+        body: new TextEncoder().encode(
+          JSON.stringify({ site: { name: site.name }, node: page }),
+        ).buffer,
+      });
+      if (added.status !== 200) {
+        console.warn(
+          "[haxcms-browser] " +
+            page.title +
+            " could not be added (" +
+            added.status +
+            ")",
+        );
+      }
+    }
+  }
+
+  // the skeleton a create-site request names, or "". Read before the request
+  // is sent: its body is handed to the Worker and is empty afterwards.
+  function requestedSkeleton(request) {
+    if (
+      request.method !== "POST" ||
+      !/\/system\/api\/v1\/sites\/?$/.test(String(request.url).split("?")[0])
+    ) {
+      return "";
+    }
+    try {
+      const body = JSON.parse(decodeBody(request.body));
+      const build = (body && body.build) || {};
+      return typeof build.skeletonMachineName === "string"
+        ? build.skeletonMachineName
+        : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   // the site a successful create-site response is for, or ""
   function createdSite(request, response) {
     if (
@@ -801,6 +917,7 @@
   // worker's relayed requests and this page's own both go.
   function dispatch(original) {
     const request = Object.assign({}, original, { binary: true });
+    const skeleton = requestedSkeleton(request);
     request.headers = Object.assign({}, request.headers);
     if (cookies.size) {
       request.headers.cookie = cookieHeader();
@@ -810,8 +927,12 @@
         rememberCookies(response.headers);
         const newSite = createdSite(request, response);
         if (newSite) {
-          // before answering, so the dashboard opens the site with its author
+          // before answering, so the dashboard opens the site with its
+          // author and pages
           await applyAuthor(newSite).catch((error) =>
+            console.warn("[haxcms-browser]", error),
+          );
+          await addStarterPages({ name: newSite, skeleton }).catch((error) =>
             console.warn("[haxcms-browser]", error),
           );
         }

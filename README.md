@@ -16,7 +16,7 @@ You get the real HAX dashboard and editor. Make a site from a template, open it,
 - **Keep the first tab open.** "Go to Site" opens a new tab; that page is still served by the tab where HAXcms started. A second HAXcms tab runs without saving, so two tabs can't overwrite each other.
 - **Download site** in the dashboard gives you a zip of a site.
 - **Publish** (on browser.hax.cloud) puts a site on the web for free: Surge, GitHub Pages, GitLab Pages, Codeberg Pages, Netlify or Vercel. See [Publishing a site](#publishing-a-site).
-- **Sign in** with Google, Microsoft, GitHub, GitLab or Apple: new sites get you as their author.
+- **Sign in** with Google, Microsoft, GitHub, GitLab or Apple: new sites get you as their author, an About page with your name and picture, and on a blog a first post.
 - **Save to the cloud** keeps your sites in Google Drive, OneDrive, Dropbox, Box or a WebDAV server such as Nextcloud, so they aren't tied to one browser.
 
 Which services a deployment offers depends on the OAuth apps whoever runs it has registered: see [docs/providers.md](docs/providers.md).
@@ -122,7 +122,7 @@ The host and name (or Surge address) last used are remembered for each site in t
 
 ## Sign-in and cloud storage
 
-**Sign in** (`src/site/accounts.js`, `src/site/auth.js`) opens the service in a popup. The broker finishes the sign-in with the app's client secret (`api/oauth/token`), and the page fetches the person's profile from the service. When someone has signed in, every site they make next gets their name, email and picture as its author, saved through HAXcms's own SEO settings route right after the site is created.
+**Sign in** (`src/site/accounts.js`, `src/site/auth.js`) opens the service in a popup. The broker finishes the sign-in with the app's client secret (`api/oauth/token`), and the page fetches the person's profile from the service. When someone has signed in, every site they make next gets their name, email and picture as its author, saved through HAXcms's own SEO settings route right after the site is created. It then gets an About page with their name and picture, unless the site already has a page called About (or About me, About us), and, when the site is a blog (the blog skeleton or the Simple Blog, Haxor Slevin or VHS Blog theme), a short first post titled "Hello from" their name. Both are added through HAXcms's items API, the request the editor's Add page makes; a skeleton's own pages are never changed. The email is not put on the About page.
 
 **Save to the cloud** moves HAXcms onto cloud storage (`src/runtime/remote.cjs`): Google Drive (a `HAXcms sites` folder, `drive.file` scope), OneDrive (the app's own folder), Dropbox (the app folder), Box (a `HAXcms sites` folder) or a WebDAV server. It plugs into the same `storage.cjs` a folder on the computer uses, so the same saving rules hold: a change is answered only after it is written, and a failed upload leaves the cloud copy as it was. The Worker asks the page for current tokens and renews an expired one once.
 

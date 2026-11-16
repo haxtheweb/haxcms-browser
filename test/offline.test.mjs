@@ -384,6 +384,18 @@ test("with no connection HAX starts, and a site can be made, edited and kept", a
   assert.equal(saved.status, 200);
   assert.match(saved.stored, /Written with no connection/);
 
+  // Publish says why it can't, rather than that there is no publish service
+  await host.click("#publish-button");
+  await host.waitForFunction(
+    () =>
+      document.getElementById("publish").open &&
+      !document.getElementById("publish-offline").hidden,
+    { timeout: 15000 },
+  );
+  assert.equal(await host.$eval("#publish-none", (el) => el.hidden), true);
+  assert.equal(await host.$eval("#publish-submit", (el) => el.hidden), true);
+  await host.keyboard.press("Escape");
+
   // still no connection: a reload brings the site back from browser storage
   await host.reload({ waitUntil: "load" });
   frame = await ready(host);

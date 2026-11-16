@@ -540,8 +540,11 @@ async function handle(event, url) {
     }
   }
   if (!mount) {
-    // the host page's own files, or a request that is not ours
-    return fetch(request);
+    // the host page's own files, or a request that is not ours. With no
+    // connection it fails the way it would with no service worker, so the
+    // page can tell "offline" from an error page (Response.error() rejects
+    // the page's fetch).
+    return fetch(request).catch(() => Response.error());
   }
   const method = request.method.toUpperCase();
   const readOnly = method === "GET" || method === "HEAD";
