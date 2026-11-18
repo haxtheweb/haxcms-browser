@@ -14,6 +14,7 @@ const {
   sendJson,
   basic,
 } = require("../_lib/broker.js");
+const { withinLimit } = require("../_lib/limit.js");
 
 module.exports = async function surgeToken(req, res) {
   if (!guard(req, res, ["POST"])) {
@@ -36,6 +37,11 @@ module.exports = async function surgeToken(req, res) {
     password.length > 1024
   ) {
     refuse(res, 400, "Send JSON with an email and a password");
+    return;
+  }
+  // limited by caller and by account, so this route cannot be used to try
+  // passwords against Surge (api/_lib/limit.js)
+  if (!withinLimit(req, res, "surge-token", email)) {
     return;
   }
   let upstream;

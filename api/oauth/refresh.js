@@ -8,6 +8,7 @@
 const { guard, readJson, refuse, sendJson } = require("../_lib/broker.js");
 const { provider } = require("../_lib/providers.js");
 const { requestTokens } = require("../_lib/oauth.js");
+const { withinLimit } = require("../_lib/limit.js");
 
 module.exports = async function oauthRefresh(req, res) {
   if (!guard(req, res, ["POST"])) {
@@ -23,6 +24,9 @@ module.exports = async function oauthRefresh(req, res) {
     typeof input.refresh_token === "string" ? input.refresh_token : "";
   if (!/^[\w.~+/=-]{8,4096}$/.test(refreshToken)) {
     refuse(res, 400, "Sign in again");
+    return;
+  }
+  if (!withinLimit(req, res, "oauth-refresh")) {
     return;
   }
   const result = await requestTokens(spec, {

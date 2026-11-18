@@ -1,6 +1,6 @@
 // The publish broker (api/): its routes run in a local HTTP server and talk
 // to a stand-in for the Surge API.
-import { test, before, after } from "node:test";
+import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import zlib from "node:zlib";
@@ -63,6 +63,11 @@ after(() => {
   surgeServer.close();
   brokerServer.close();
   restoreFetch();
+});
+
+// each test starts with its request limits unused
+beforeEach(() => {
+  require("../api/_lib/limit.js").resetLimits();
 });
 
 function reset(respond) {
@@ -258,4 +263,65 @@ test("Surge refusing a deploy comes back with its message", async () => {
   const response = await deploy("?domain=x.surge.sh");
   assert.equal(response.status, 403);
   assert.match((await response.json()).error, /permission/);
+});
+
+test("the token route is limited per account and per caller", async () => {
+  const { LIMITS } = require("../api/_lib/limit.js");
+  reset((req, res) => {
+    res.statusCode = 401;
+    res.end("{}");
+  });
+  const attempt = (email) =>
+    fetch(broker + "/api/surge/token", {
+      method: "POST",
+      headers: { origin: broker, "content-type": "application/json" },
+      body: JSON.stringify({ email, password: "guess" }),
+    });
+  // one account: its limit of wrong guesses, then 429 without calling Surge
+  for (let i = 0; i < LIMITS["surge-token"].account; i++) {
+    assert.equal((await attempt("One@example.com")).status, 401);
+  }
+  const blocked = await attempt("one@example.com");
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+  assert.equal(JSON.stringify(await blocked.json()).indexOf("guess"), -1);
+  assert.equal(surge.requests.length, LIMITS["surge-token"].account);
+  // other accounts from the same caller: the caller's limit applies
+  let last = null;
+  for (let i = 0; i < LIMITS["surge-token"].address; i++) {
+    last = await attempt("other" + i + "@example.com");
+  }
+  assert.equal(last.status, 429);
+  assert.ok(surge.requests.length <= LIMITS["surge-token"].address);
+});
+
+test("deploys are limited per caller", async () => {
+  const { LIMITS } = require("../api/_lib/limit.js");
+  reset((req, res) => {
+    res.statusCode = 200;
+    res.end("ok");
+  });
+  for (let i = 0; i < LIMITS["surge-deploy"].address; i++) {
+    assert.notEqual((await deploy("?domain=x.surge.sh")).status, 429);
+  }
+  const blocked = await deploy("?domain=x.surge.sh");
+  assert.equal(blocked.status, 429);
+  assert.equal(surge.requests.length, LIMITS["surge-deploy"].address);
+});
+
+test("request limits hold digests, not addresses or emails", () => {
+  const limit = require("../api/_lib/limit.js");
+  limit.resetLimits();
+  const res = { setHeader() {}, end() {} };
+  const req = { headers: { "x-real-ip": "203.0.113.9" } };
+  assert.equal(limit.withinLimit(req, res, "surge-token", "a@b.co"), true);
+  assert.equal(limit.callerAddress(req), "203.0.113.9");
+  assert.equal(
+    limit.callerAddress({
+      headers: { "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
+    }),
+    "198.51.100.7",
+  );
+  // a route with no limit is always allowed
+  assert.equal(limit.withinLimit(req, res, "status"), true);
 });
