@@ -232,6 +232,152 @@ test("when the browser says HAX can be installed, a notice offers it; Not now is
   await host.evaluate(() => sessionStorage.removeItem("test:install-offer"));
 });
 
+test("a save that is interrupted is not a copy, and carries on from what it has", async () => {
+  // its own storage: nothing saved yet, whatever the other tests have done
+  const context = await browser.createBrowserContext();
+  try {
+    const page = await context.newPage();
+    // the connection goes after a number of the save's own requests
+    await page.evaluateOnNewDocument((key) => {
+      localStorage.setItem(key, String(Date.now()));
+      const real = globalThis.fetch;
+      globalThis.__fetched = 0;
+      globalThis.fetch = function (input, init) {
+        if (init && init.cache === "no-store") {
+          globalThis.__fetched += 1;
+          const limit = Number(sessionStorage.getItem("test:fail-after"));
+          if (limit && globalThis.__fetched > limit) {
+            return Promise.reject(new TypeError("Failed to fetch"));
+          }
+        }
+        return real.call(this, input, init);
+      };
+    }, OFFER_KEY);
+    await page.goto(server.url, { waitUntil: "load" });
+    await ready(page);
+    await page.evaluate(() => sessionStorage.setItem("test:fail-after", "400"));
+    await openDetails(page);
+    await page.click("#offline-save");
+    await page.waitForFunction(
+      () =>
+        /could not be saved/.test(
+          document.getElementById("offline-state").textContent,
+        ),
+      { timeout: 240000 },
+    );
+    assert.match(
+      await page.$eval("#offline-state", (el) => el.textContent),
+      /does not work offline yet.*carries on/,
+    );
+    let saved = await copies(page);
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].meta, null, "not a copy: no meta record");
+    assert.ok(saved[0].entries > 300, "what arrived whole is kept");
+    const kept = saved[0].entries;
+
+    // the next load carries on by itself, and only fetches what is missing
+    await page.evaluate(() => sessionStorage.removeItem("test:fail-after"));
+    await page.reload({ waitUntil: "load" });
+    await ready(page);
+    await page.waitForFunction(
+      () =>
+        /works offline/.test(
+          document.getElementById("offline-state").textContent,
+        ),
+      { timeout: 240000 },
+    );
+    saved = await copies(page);
+    assert.equal(saved.length, 1);
+    assert.ok(saved[0].meta, "now it is a copy");
+    assert.equal(saved[0].entries, saved[0].meta.files + 2);
+    const fetched = await page.evaluate(() => globalThis.__fetched);
+    assert.ok(
+      fetched <= saved[0].meta.files - kept + 10,
+      "fetched " +
+        fetched +
+        " with " +
+        kept +
+        " of " +
+        saved[0].meta.files +
+        " already kept",
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("a second window that starts saving, and is cut off, does not undo the first", async () => {
+  // installing starts a save in the browser tab, and opening the installed
+  // app starts another, which may well be closed before it is done
+  const context = await browser.createBrowserContext();
+  try {
+    const pages = [];
+    for (let i = 0; i < 2; i++) {
+      // one at a time: a tab behind another starts slowly
+      const page = await context.newPage();
+      pages.push(page);
+      await page.evaluateOnNewDocument((key) => {
+        localStorage.setItem(key, String(Date.now()));
+        // the second window loses its connection early in its own save
+        const real = globalThis.fetch;
+        let fetched = 0;
+        globalThis.fetch = function (input, init) {
+          if (init && init.cache === "no-store") {
+            fetched += 1;
+            const limit = Number(sessionStorage.getItem("test:fail-after"));
+            if (limit && fetched > limit) {
+              return Promise.reject(new TypeError("Failed to fetch"));
+            }
+          }
+          return real.call(this, input, init);
+        };
+      }, OFFER_KEY);
+      await page.goto(server.url, { waitUntil: "load" });
+      await ready(page);
+      await openDetails(page);
+    }
+    const [first, second] = pages;
+    const stateOf = (page) =>
+      page.$eval("#offline-state", (el) => el.textContent);
+    await second.evaluate(() =>
+      sessionStorage.setItem("test:fail-after", "50"),
+    );
+    await first.$eval("#offline-save", (button) => button.click());
+    // the tab behind the other is not drawing, so check on a timer
+    await first.waitForFunction(
+      () =>
+        /Saving HAX for offline use: \d+ MB/.test(
+          document.getElementById("offline-state").textContent,
+        ),
+      { timeout: 120000, polling: 100 },
+    );
+    await second.$eval("#offline-save", (button) => button.click());
+    await first.waitForFunction(
+      () =>
+        /works offline|could not be saved/.test(
+          document.getElementById("offline-state").textContent,
+        ),
+      { timeout: 240000, polling: 1000 },
+    );
+    assert.match(await stateOf(first), /works offline/);
+    // the second window waited its turn and found nothing left to fetch
+    await second.waitForFunction(
+      () =>
+        /works offline|could not be saved/.test(
+          document.getElementById("offline-state").textContent,
+        ),
+      { timeout: 240000, polling: 1000 },
+    );
+    assert.match(await stateOf(second), /works offline/);
+    const saved = await copies(first);
+    assert.equal(saved.length, 1);
+    assert.ok(saved[0].meta, "a whole copy");
+    assert.equal(saved[0].entries, saved[0].meta.files + 2);
+  } finally {
+    await context.close();
+  }
+});
+
 test("Make available offline saves one whole build", async () => {
   await openDetails(host);
   await host.click("#offline-save");
