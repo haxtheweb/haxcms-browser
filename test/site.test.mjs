@@ -476,6 +476,48 @@ test("sites are saved in the browser and are still there after a reload", async 
   assert.match(page, /Saved from the smoke test/);
 });
 
+test("browser storage works where a directory handle cannot be sent to a Worker (WebKit)", async () => {
+  // WebKit (Safari, every iOS browser) has no folder picker and refuses to
+  // send a FileSystemHandle to a Worker. Its own storage and locks, so this
+  // is a first tab there: a private context made to behave the same way.
+  const context = await browser.createBrowserContext();
+  try {
+    const page = await context.newPage();
+    await page.evaluateOnNewDocument(() => {
+      delete globalThis.showDirectoryPicker;
+      const post = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (data, transfer) {
+        const values = [data].concat(
+          data && typeof data === "object" ? Object.values(data) : [],
+          data && data.storage && typeof data.storage === "object"
+            ? Object.values(data.storage)
+            : [],
+        );
+        if (values.some((value) => value instanceof FileSystemHandle)) {
+          throw new DOMException(
+            "The object can not be cloned.",
+            "DataCloneError",
+          );
+        }
+        return post.call(this, data, transfer);
+      };
+    });
+    await page.goto(server.url, { waitUntil: "load" });
+    await waitReady(page);
+    assert.equal(
+      await page.$eval("#status", (el) => el.textContent),
+      "HAXcms is running in your browser",
+    );
+    // and it is saving to the browser's storage, not only to memory
+    assert.match(
+      await page.$eval("#note", (el) => el.textContent),
+      /^Saved in this browser/,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
 test("a second tab does not save over the first", async () => {
   const second = await browser.newPage();
   await second.goto(server.url, { waitUntil: "load" });

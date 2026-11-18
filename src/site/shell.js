@@ -1118,11 +1118,16 @@
       root: "/haxcms",
       basePath: mount,
       origin: globalThis.location.origin,
+      // The browser's own storage goes by name and the Worker opens it:
+      // WebKit cannot send a directory handle to a Worker. Only a folder
+      // the person picked (Chromium only) is sent as a handle.
       storage: storage.remote
         ? { remote: storage.remote }
-        : storage.handle
-          ? { handle: storage.handle }
-          : null,
+        : storage.kind === "browser"
+          ? { browser: BROWSER_STORE }
+          : storage.handle
+            ? { handle: storage.handle }
+            : null,
     });
     // one local user, so sign in for them: HAXcms then opens signed in
     const signedIn = await send("signIn", {});

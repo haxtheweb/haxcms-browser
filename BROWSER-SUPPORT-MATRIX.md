@@ -6,7 +6,7 @@
 | Firefox                | untested    | untested             | no (no folder picker)             |
 | Safari                 | untested    | untested             | no (no folder picker)             |
 
-The demo needs service workers and web workers (some browsers turn service workers off in private windows). Saving in the browser uses the origin private file system. Saving to a folder needs `showDirectoryPicker`, which only Chromium-based browsers ship; elsewhere the button is not shown. The tests run in headless Chrome only so far.
+The demo needs service workers and web workers (some browsers turn service workers off in private windows). Saving in the browser uses the origin private file system, which the Worker opens itself: Safari and every iOS browser (WebKit) cannot send a directory handle to a Worker. Saving to a folder needs `showDirectoryPicker`, which only Chromium-based browsers ship; elsewhere the button is not shown. The tests run in headless Chrome only so far.
 
 ## Installing and working offline
 
