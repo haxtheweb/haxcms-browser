@@ -24,6 +24,10 @@ Which services a deployment offers depends on the OAuth apps whoever runs it has
 - **Details** in the top bar shows what is running, what is not available in the browser, and the build to quote in a bug report.
 - Problems go to [haxtheweb/issues](https://github.com/haxtheweb/issues/issues).
 
+### Link straight to making a site
+
+`https://browser.hax.cloud/?skeleton=<machine name>&name=<site name>` opens the dashboard's create step with that starter picked and the name filled in; nothing is made until the person confirms. It is the browser version of `hax site <name> --skeleton-machine-name <machine name>`, so an agent that would run that command for someone at a terminal can hand a person without one this link instead (`?skeleton=portfolio&name=My%20work`). `skeleton` must be the machine name of a starter HAXcms lists (online-course, portfolio, art-portfolio, club-website, docs, blog, resume-journey, ...); anything else opens the normal start screen. Both values are taken out of the address once read, so a reload does not start over.
+
 > Status: early. The full haxcms-nodejs Express app runs in a Worker and the real HAX front end talks to it through a service worker, with the same results as Node (see [Parity](#parity)). Sites are saved to browser storage or a folder on your computer. Next: the status element inside HAX's own top bar, opening a single site folder directly, and other browsers.
 
 ## How it works

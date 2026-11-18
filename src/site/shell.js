@@ -56,6 +56,8 @@
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
   const mount = scope + "app/" + session + "/";
+  // a link that asks to start a site (?skeleton=&name=), read once
+  let pendingCreate = takeCreateLink();
 
   const RUNNING = "HAXcms is running in your browser";
   const NOT_SAVED = "Not saved: your last change did not reach storage";
@@ -1116,6 +1118,69 @@
     );
   }
 
+  // ?skeleton=<machine name>&name=<site name> on this page's address opens
+  // the dashboard's create step with that starter picked and the name filled
+  // in (haxtheweb/issues#3374): the landing page's picker and agents hand
+  // people this link. Read once and taken out of the address, so a reload
+  // does not start over. Nothing is created until the person confirms.
+  function takeCreateLink() {
+    let url;
+    try {
+      url = new URL(globalThis.location.href);
+    } catch (e) {
+      return null;
+    }
+    const skeleton = url.searchParams.get("skeleton");
+    const name = url.searchParams.get("name");
+    if (skeleton === null && name === null) {
+      return null;
+    }
+    url.searchParams.delete("skeleton");
+    url.searchParams.delete("name");
+    globalThis.history.replaceState(globalThis.history.state, "", url.href);
+    // a machine name, checked against HAXcms's skeleton list before use
+    if (skeleton === null || !/^[a-z0-9-]{1,100}$/.test(skeleton)) {
+      return null;
+    }
+    return { skeleton, name: String(name || "").slice(0, 200) };
+  }
+
+  // the dashboard address for a create link, or the dashboard itself when
+  // HAXcms has no enabled skeleton by that machine name
+  async function dashboardAddress(link) {
+    if (!link) {
+      return mount;
+    }
+    let listed = [];
+    try {
+      const answer = await signedInRequest({
+        method: "GET",
+        url: "/system/api/v1/skeletons",
+        headers: { authorization: "Bearer " + sessionJwt },
+      });
+      const data = answer.status === 200 && answer.json && answer.json.data;
+      listed = Array.isArray(data) ? data : [];
+    } catch (error) {
+      console.warn("[haxcms-browser] skeletons", error);
+    }
+    const known = listed.some(
+      (item) =>
+        item &&
+        typeof item.machineName === "string" &&
+        item.machineName === link.skeleton,
+    );
+    if (!known) {
+      return mount;
+    }
+    // the dashboard's own deep link: it picks the starter, fills in the
+    // name (it cleans that itself) and waits for the person to confirm
+    const query = new URLSearchParams({ "use-case": link.skeleton });
+    if (link.name) {
+      query.set("name", link.name);
+    }
+    return mount + "?" + query.toString();
+  }
+
   async function boot(chosen) {
     const began = performance.now();
     storage = chosen;
@@ -1157,12 +1222,16 @@
     sharer
       .start()
       .catch((error) => console.warn("[haxcms-browser] share", error));
+    // a create link opens once, on the first start that can take it
+    const link = pendingCreate;
+    pendingCreate = null;
+    const address = await dashboardAddress(link);
     message.hidden = true;
     frame.hidden = false;
     if (frame.getAttribute("src")) {
-      frame.contentWindow.location.replace(mount);
+      frame.contentWindow.location.replace(address);
     } else {
-      frame.src = mount;
+      frame.src = address;
     }
   }
 
