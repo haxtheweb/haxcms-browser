@@ -529,6 +529,114 @@ test("a second tab does not save over the first", async () => {
   await second.close();
 });
 
+// ?skeleton=&name= (haxtheweb/issues#3374): the landing page's picker and
+// agents link people straight to making a site from a starter
+async function openCreateLink(query) {
+  const page = await browser.newPage();
+  await page.goto(server.url + query, { waitUntil: "load" });
+  await waitReady(page);
+  const inner = page.frames().find((f) => f.url().includes("/app/"));
+  return { page, inner };
+}
+
+// the dashboard's create dialog, through the shadow roots it sits in
+function createDialogState(inner) {
+  return inner.evaluate(() => {
+    const find = (root) => {
+      const hit = root.querySelector("app-hax-site-creation-modal");
+      if (hit) {
+        return hit;
+      }
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) {
+          const found = find(el.shadowRoot);
+          if (found) {
+            return found;
+          }
+        }
+      }
+      return null;
+    };
+    const modal = find(document);
+    return modal
+      ? { open: !!modal.open, name: modal.siteName || "" }
+      : { open: false, name: "" };
+  });
+}
+
+test("a ?skeleton=&name= link opens the create step with that starter and name", async () => {
+  const { page, inner } = await openCreateLink(
+    "?skeleton=portfolio&name=My%20work",
+  );
+  try {
+    // read once and taken out of the address, so a reload starts fresh
+    const address = new URL(page.url());
+    assert.equal(address.searchParams.get("skeleton"), null);
+    assert.equal(address.searchParams.get("name"), null);
+    // handed to the dashboard as its own deep link
+    const opened = new URL(inner.url());
+    assert.equal(opened.searchParams.get("use-case"), "portfolio");
+    assert.equal(opened.searchParams.get("name"), "My work");
+    await inner.waitForFunction(() => document.title === "HAX: Home", {
+      timeout: 30000,
+    });
+    // the dialog opens with the name filled in, and nothing is created
+    const deadline = Date.now() + 30000;
+    let state = await createDialogState(inner);
+    while (!state.open && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      state = await createDialogState(inner);
+    }
+    assert.deepEqual(state, { open: true, name: "My work" });
+  } finally {
+    await page.close();
+  }
+});
+
+test("every starter the landing page's picker links to is accepted", async () => {
+  // hax-use-case-picker in haxtheweb/webcomponents builds these links
+  for (const skeleton of [
+    "online-course",
+    "portfolio",
+    "art-portfolio",
+    "club-website",
+    "docs",
+    "blog",
+    "resume-journey",
+  ]) {
+    const { page, inner } = await openCreateLink(
+      "?skeleton=" + skeleton + "&name=Test",
+    );
+    try {
+      assert.equal(
+        new URL(inner.url()).searchParams.get("use-case"),
+        skeleton,
+        skeleton + " is a starter HAXcms lists",
+      );
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test("an unknown or malformed ?skeleton= opens the normal start screen", async () => {
+  for (const query of [
+    "?skeleton=not-a-starter&name=x",
+    "?skeleton=..%2Fportfolio&name=x",
+    "?skeleton=Portfolio",
+    "?name=only%20a%20name",
+  ]) {
+    const { page, inner } = await openCreateLink(query);
+    try {
+      const address = new URL(page.url());
+      assert.equal(address.search, "", query);
+      assert.equal(new URL(inner.url()).search, "", query);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
 // The folder picker is a native dialog, so the tests hand the page a folder
 // the same way the picker would: a directory handle. These come from the
 // browser's private file system, which is the same kind of object.
