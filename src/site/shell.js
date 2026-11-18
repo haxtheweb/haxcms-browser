@@ -116,7 +116,14 @@
     const heading = document.createElement("h1");
     heading.textContent = title;
     const text = document.createElement("pre");
-    text.textContent = String((error && error.stack) || error || "");
+    // Chrome's stack starts with the error's message; Firefox's and WebKit's
+    // is only the frames, so the message is put first when it is missing
+    const stack = String((error && error.stack) || "");
+    const summary = String(error || "");
+    text.textContent =
+      stack && stack.indexOf(summary) === -1
+        ? summary + "\n" + stack
+        : stack || summary;
     message.append(heading, text);
   }
 
@@ -1118,11 +1125,16 @@
       root: "/haxcms",
       basePath: mount,
       origin: globalThis.location.origin,
+      // The browser's own storage goes by name and the Worker opens it:
+      // WebKit cannot send a directory handle to a Worker. Only a folder
+      // the person picked (Chromium only) is sent as a handle.
       storage: storage.remote
         ? { remote: storage.remote }
-        : storage.handle
-          ? { handle: storage.handle }
-          : null,
+        : storage.kind === "browser"
+          ? { browser: BROWSER_STORE }
+          : storage.handle
+            ? { handle: storage.handle }
+            : null,
     });
     // one local user, so sign in for them: HAXcms then opens signed in
     const signedIn = await send("signIn", {});

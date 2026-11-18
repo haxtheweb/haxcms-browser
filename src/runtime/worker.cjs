@@ -15,6 +15,10 @@
  *                                   { handle }: a FileSystemDirectoryHandle
  *                                   the sites folder is loaded from and
  *                                   saved to (see storage.cjs), or
+ *                                   { browser: name }: the folder of that
+ *                                   name in the browser's own storage,
+ *                                   opened here (WebKit cannot send a
+ *                                   handle to a Worker), or
  *                                   { remote: { provider, webdav } }: cloud
  *                                   storage (remote.cjs), signed in with
  *                                   tokens the page sends on request (see
@@ -131,11 +135,30 @@ function requestToken(provider, force) {
   });
 }
 
-// the directory handle for a storage choice: a handle the page passed (a
-// folder or the browser's own storage), or cloud storage built here
+// The browser's own storage (the origin private file system), opened here by
+// name. The name is one folder directly inside that storage, never a path.
+const BROWSER_STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+async function browserStoreHandle(name) {
+  if (typeof name !== "string" || !BROWSER_STORE_NAME.test(name)) {
+    throw new Error("that is not a name for browser storage");
+  }
+  const storageManager = globalThis.navigator && globalThis.navigator.storage;
+  if (!storageManager || typeof storageManager.getDirectory !== "function") {
+    throw new Error("this browser has no storage a Worker can use");
+  }
+  const root = await storageManager.getDirectory();
+  return root.getDirectoryHandle(name, { create: true });
+}
+
+// the directory handle for a storage choice: a folder handle the page
+// passed, the browser's own storage opened here by name (a handle cannot be
+// sent to a Worker in every browser), or cloud storage built here
 async function handleFor(choice) {
   if (choice && choice.handle) {
     return choice.handle;
+  }
+  if (choice && choice.browser) {
+    return browserStoreHandle(choice.browser);
   }
   if (choice && choice.remote) {
     const remote = choice.remote;

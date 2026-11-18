@@ -88,6 +88,7 @@ npm ci
 export HAXCMS_NODEJS_SRC=/path/to/haxcms-nodejs/src   # optional, see below
 npm run build      # dist/haxcms-worker.js + dist/haxcms-snapshot.json
 npm test           # parity + hosted-demo tests in headless Chrome
+npm run test:engines   # the demo in WebKit and Firefox (once: npx playwright-core install webkit firefox)
 npm run precheck   # prettier + eslint on changed files
 
 # run the demo locally, served like GitHub Pages
