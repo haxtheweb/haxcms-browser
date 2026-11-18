@@ -304,7 +304,14 @@ async function main() {
     minify: process.env.HAXCMS_BROWSER_MINIFY !== "0",
     metafile: true,
     logLevel: "warning",
-    alias: { "haxcms-nodejs": SRC },
+    alias: {
+      "haxcms-nodejs": SRC,
+      // depd (deprecation notices, used by Express and its parts) reads call
+      // sites through V8's stack API on Node and fails to load in Firefox
+      // and WebKit. Its own browser build has the same exports and prints
+      // nothing, and needs no window.
+      depd: "depd/lib/browser/index.js",
+    },
     // NODE_ENV stays unset, like `hax serve`: haxcms-nodejs treats
     // production as a server deployment (and refuses local mode there).
     define: {
