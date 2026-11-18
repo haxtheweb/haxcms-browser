@@ -116,7 +116,14 @@
     const heading = document.createElement("h1");
     heading.textContent = title;
     const text = document.createElement("pre");
-    text.textContent = String((error && error.stack) || error || "");
+    // Chrome's stack starts with the error's message; Firefox's and WebKit's
+    // is only the frames, so the message is put first when it is missing
+    const stack = String((error && error.stack) || "");
+    const summary = String(error || "");
+    text.textContent =
+      stack && stack.indexOf(summary) === -1
+        ? summary + "\n" + stack
+        : stack || summary;
     message.append(heading, text);
   }
 
