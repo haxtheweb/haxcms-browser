@@ -22,6 +22,7 @@ const {
   bearer,
   basic,
 } = require("../_lib/broker.js");
+const { withinLimit } = require("../_lib/limit.js");
 
 module.exports = async function surgeDeploy(req, res) {
   if (!guard(req, res, ["PUT"])) {
@@ -36,6 +37,9 @@ module.exports = async function surgeDeploy(req, res) {
   const token = bearer(req);
   if (!token) {
     refuse(res, 401, "A Surge token is needed to publish");
+    return;
+  }
+  if (!withinLimit(req, res, "surge-deploy")) {
     return;
   }
   let body;

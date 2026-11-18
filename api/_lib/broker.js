@@ -4,7 +4,9 @@
  * Small Vercel functions that pass a request from the haxcms-browser page to
  * a publishing service and pass the answer back. They keep nothing: no
  * database, no files, no logs of what passed through. Credentials arrive
- * with each request and are forgotten when it ends.
+ * with each request and are forgotten when it ends. The one thing held, in
+ * memory and only until its window ends, is a count of recent requests per
+ * caller (api/_lib/limit.js).
  *
  * Rules this file keeps:
  * - Only the page that serves this deployment (its own origin), or an origin
@@ -16,6 +18,8 @@
  *   host.
  * - Passwords and tokens are never written to a log, a response header or an
  *   error message.
+ * - Routes that reach a publishing service are rate limited per caller, and
+ *   the token route per account as well (api/_lib/limit.js).
  */
 
 // Vercel refuses request bodies over 4.5 MB; stop a little before that with
