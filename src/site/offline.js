@@ -17,6 +17,10 @@
  *   its last entry (the meta record) is written. The copy in use is never
  *   changed in place: an update is saved beside it and replaces it when it
  *   is complete.
+ * - A save that stops part way (the window was closed, the connection went)
+ *   keeps the files that arrived whole and carries on from there the next
+ *   time; it is not a copy, and is not served, until it is complete. Only
+ *   one window saves at a time, so two windows never undo each other.
  * - A copy does not update itself behind the person's back. When the web
  *   server has a newer build, a notice offers the update; it takes effect
  *   the next time the page is loaded.
@@ -46,6 +50,8 @@
   const MANIFEST = "./offline-manifest.json";
   const LOCALES = "./offline-locales/";
   const PARALLEL = 6;
+  // held while a window saves the copy, so a second window waits for it
+  const SAVE_LOCK = "haxcms-browser-offline-save:" + scope;
   // look for a newer build at most this often while the page stays open
   const CHECK_EVERY_MS = 30 * 60 * 1000;
 
@@ -134,9 +140,27 @@
     });
   }
 
+  // Is there a save that stopped part way (files, but no meta record)?
+  async function unfinishedSave() {
+    if (!globalThis.caches) {
+      return false;
+    }
+    for (const name of await caches.keys()) {
+      if (name.indexOf(PREFIX) !== 0) {
+        continue;
+      }
+      const cache = await caches.open(name);
+      if (!(await cache.match(META))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Save the build the web server has now. Files the copy in use already
   // holds unchanged are taken from it, so an update only downloads what is
-  // new. Resolves the new copy's meta record.
+  // new, and a save of this build that stopped part way carries on from the
+  // files it already has. Resolves the new copy's meta record.
   async function saveCopy(onProgress) {
     const manifest = await serverManifest();
     if (manifest.format !== FORMAT) {
@@ -183,10 +207,17 @@
       const saved = await previous.cache.match(FILES);
       reuse.files = saved ? await saved.json().catch(() => ({})) : {};
     }
-    if (!previous || previous.name !== name) {
-      // a save of this build that stopped part way
-      await caches.delete(name);
+    // unfinished saves of builds the web server no longer has
+    for (const other of await caches.keys()) {
+      if (
+        other.indexOf(PREFIX) === 0 &&
+        other !== name &&
+        (!previous || other !== previous.name)
+      ) {
+        await caches.delete(other);
+      }
     }
+    // an unfinished save of this build is kept: what is in it arrived whole
     const cache = await caches.open(name);
 
     let done = 0;
@@ -198,8 +229,11 @@
         throw new Error(path + " is not a file of this site");
       }
       const expected = files[path];
-      if (previous && previous.name === name && (await cache.match(address))) {
-        return; // same build: only fill in what is missing
+      if (await cache.match(address)) {
+        // same build (a copy getting a language, or a save carrying on):
+        // only what is missing is fetched. A file is only ever put here
+        // after it arrived whole.
+        return;
       }
       let response = null;
       if (reuse && reuse.files[path] && reuse.files[path][0] === expected[0]) {
@@ -238,9 +272,8 @@
       }
     } catch (error) {
       next = paths.length; // stop the other downloads
-      if (!previous || previous.name !== name) {
-        await caches.delete(name);
-      }
+      // what arrived stays for the next try, which carries on from it; a
+      // save of a build the server has moved on from is cleared by that try
       throw error;
     }
     const meta = {
@@ -339,7 +372,7 @@
       if (installPrompt) {
         installOffered = true;
         toast({
-          text: "Install HAX as an app? It opens in its own window, works without a connection, and the browser keeps your sites safe.",
+          text: "Install HAX as an app? It opens in its own window and the browser keeps your sites safe. Once installed it saves a copy of itself, and then works without a connection.",
           action: "Install",
           run: () => installButton.click(),
           dismiss: "Not now",
@@ -348,7 +381,7 @@
       } else if (isAppleTouch() && supported) {
         installOffered = true;
         toast({
-          text: "Install HAX as an app: tap Share, then Add to Home Screen. It then works without a connection and keeps your sites safe.",
+          text: "Install HAX as an app: tap Share, then Add to Home Screen. Open it once while connected: it saves a copy of itself, then works without a connection and keeps your sites safe.",
           dismiss: "Got it",
           onDismiss: dismissOffer,
         });
@@ -411,8 +444,21 @@
       progress.value = 0;
       show("Saving HAX for offline use…");
       render();
-      try {
-        copy = await saveCopy((at) => {
+      if (reason === "installed" || reason === "resume") {
+        // started without being asked just now: say so, it takes a while
+        toast({
+          text: "Saving HAX to work without a connection. Keep it open until it says it is ready; if it is interrupted it carries on next time.",
+          dismiss: "OK",
+        });
+      }
+      // downloads already under way when a save fails still report in:
+      // they must not write over the message that says it failed
+      let reporting = true;
+      const run = () =>
+        saveCopy((at) => {
+          if (!reporting) {
+            return;
+          }
           progress.value = Math.round((at.doneBytes / at.bytes) * 100);
           show(
             "Saving HAX for offline use: " +
@@ -422,6 +468,24 @@
               "…",
           );
         });
+      try {
+        if (navigator.locks && navigator.locks.request) {
+          // one window saves at a time; this one then only fills in what
+          // the other left
+          copy = await navigator.locks.request(
+            SAVE_LOCK,
+            { ifAvailable: true },
+            (lock) => {
+              if (lock) {
+                return run();
+              }
+              show("Another HAX window is saving the offline copy…");
+              return navigator.locks.request(SAVE_LOCK, run);
+            },
+          );
+        } else {
+          copy = await run();
+        }
         busy = false;
         const updated = newer || reason === "update";
         newer = false;
@@ -441,6 +505,7 @@
           });
         }
       } catch (error) {
+        reporting = false;
         busy = false;
         render();
         show(
@@ -449,7 +514,7 @@
             ". " +
             (copy
               ? "The copy you already have is unchanged."
-              : "Nothing was kept."),
+              : "HAX does not work offline yet. Trying again carries on from where this stopped."),
         );
         console.warn("[haxcms-browser] offline copy", error);
       }
@@ -554,8 +619,12 @@
         render();
         showStorage(isInstalled() || !!copy);
         if (!copy && isInstalled()) {
-          // installed where no event says so (iOS home screen)
+          // installed where no event says so (iOS home screen), or the save
+          // that installing started did not finish
           save("installed");
+        } else if (!copy && (await unfinishedSave().catch(() => false))) {
+          // asked for before and interrupted: carry on
+          save("resume");
         } else {
           check(true);
         }
