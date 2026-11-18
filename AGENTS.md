@@ -29,6 +29,7 @@ https://github.com/haxtheweb/praw, and is read from there instead of being copie
 - **Publishing** packs the same files the HAX CLI publishes (`src/runtime/publish.cjs`) and never changes the site. Hosts that accept browser requests (GitHub, GitLab, Codeberg, Netlify, Vercel) are called straight from the page (`src/site/publish-hosts.js`), not through the broker.
 - **Cloud storage** (`src/runtime/remote.cjs`) is a directory handle for `storage.cjs`, so the Saving rules above hold for it too; each backend stays inside its own HAXcms folder and removes to the service's trash where it has one. Tokens stay in the tab (memory and sessionStorage), never localStorage; a WebDAV app password is never stored.
 - No optional chaining (`?.`); use `globalThis`, not `window` (the runtime is a Worker).
+- **Every engine, not only Chrome.** The demo must start and save in WebKit (Safari, every iOS browser) and Firefox. Do not rely on something only Chromium has without a fallback: a directory handle cannot be sent to a Worker in WebKit, `createWritable` is not everywhere, `showDirectoryPicker` is Chromium only, and packages that read V8's stack API fail to load elsewhere. `test/engines/` runs in CI in both engines; a change to start-up, storage, the Worker protocol or the bundle that should hold in every engine gets a case there.
 
 ## Commands
 
@@ -37,6 +38,7 @@ npm ci
 export HAXCMS_NODEJS_SRC=/path/to/haxcms-nodejs/src
 npm run build
 npm test            # headless Chrome; PUPPETEER_EXECUTABLE_PATH if not /usr/bin/google-chrome
+npm run test:engines  # the same demo in WebKit and Firefox (once: npx playwright-core install webkit firefox)
 npm run precheck    # run before every push or PR; precheck:fix auto-fixes
 npm run lint:security
 ```
@@ -56,7 +58,7 @@ npm run lint:security
 - `.github/workflows/pages.yml`: publishes the demo to GitHub Pages from `main`
 - `scripts/start.mjs`: `npm start`, builds the site if missing and serves it
 - `scripts/build-hosted.mjs` + `vercel.json`: the same build in one step for hosts that build from the repository (`npm run build:hosted`)
-- `test/`: parity scenario and Node runner (`parity.test.mjs`), the hosted demo end to end (`site.test.mjs`, including Publish through a stand-in broker and Surge), the packer (`publish.test.mjs`), the broker (`broker.test.mjs`, `oauth.test.mjs`), cloud storage (`remote.test.mjs`), the publish hosts (`publish-hosts.test.mjs`), at the root of a domain (`root.test.mjs`), the storage layer against a stand-in folder (`storage.test.mjs`), and the installable app: offline copy, update notice, reset and share target (`offline.test.mjs`)
+- `test/`: parity scenario and Node runner (`parity.test.mjs`), the hosted demo end to end (`site.test.mjs`, including Publish through a stand-in broker and Surge), the packer (`publish.test.mjs`), the broker (`broker.test.mjs`, `oauth.test.mjs`), cloud storage (`remote.test.mjs`), the publish hosts (`publish-hosts.test.mjs`), at the root of a domain (`root.test.mjs`), the storage layer against a stand-in folder (`storage.test.mjs`), and the installable app: offline copy, update notice, reset and share target (`offline.test.mjs`); `test/engines/engines.test.mjs` (not part of `npm test`) runs start, save in the browser and reload in WebKit and Firefox with Playwright
 
 ## Pull requests
 

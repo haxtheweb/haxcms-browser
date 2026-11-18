@@ -25,7 +25,7 @@ Need to discuss something via chat? Our [Discord can be joined here](https://dis
 
 ## Setting up a Development Environment
 
-You need Node.js 18.20.3 or newer, git, and Chrome or Chromium (the tests run the runtime in headless Chrome).
+You need Node.js 18.20.3 or newer, git, and Chrome or Chromium (the tests run the runtime in headless Chrome). CI also runs the demo in WebKit and Firefox; `npm run test:engines` does the same locally after `npx playwright-core install webkit firefox`.
 
 ```bash
 git clone https://github.com/haxtheweb/haxcms-browser.git
