@@ -100,7 +100,10 @@ async function documentSteps(
   { userHeaders, siteHeaders, pageId },
 ) {
   const facts = {};
-  // page text for readability and the site exports to work on
+  // page text for readability and the site exports to work on. The
+  // page-break sets the page's details, so it carries the title and
+  // published flag the editor writes: a bare one renames the page "New page"
+  // and unpublishes it, and readability skips unpublished pages.
   const saved = await adapter.request(
     "PATCH",
     "/_sites/" + SITE + "/x/api/v1/content/" + pageId,
@@ -108,7 +111,7 @@ async function documentSteps(
       headers: siteHeaders,
       json: {
         body:
-          "<page-break></page-break>" +
+          '<page-break title="A" published></page-break>' +
           "<p>The quick brown fox jumps over the lazy dog. " +
           "Readability formulas need several sentences to measure. " +
           "Extraordinarily complicated vocabulary increases difficulty.</p>",
