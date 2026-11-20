@@ -39,6 +39,9 @@
   const statusText = document.getElementById("status");
   const dot = document.getElementById("dot");
   const note = document.getElementById("note");
+  const storageText = document.getElementById("storage-text");
+  const storageLabel = document.getElementById("storage-label");
+  const storageIcon = document.getElementById("storage-icon");
   const frame = document.getElementById("app");
   const message = document.getElementById("message");
   const detailsButton = document.getElementById("details-button");
@@ -252,9 +255,31 @@
     );
   }
 
+  // the bar's short name for where sites are saved, and its icon
+  function storagePlace() {
+    if (storage.kind === "folder") {
+      return { label: storage.handle.name, icon: "folder" };
+    }
+    if (storage.kind === "cloud") {
+      return { label: storage.label, icon: "cloud" };
+    }
+    if (storage.kind === "browser") {
+      return { label: "This browser", icon: "browser" };
+    }
+    return { label: "Not saved", icon: "memory" };
+  }
+
   function showStorage() {
-    note.textContent = storageSentence();
+    const sentence = storageSentence();
+    const place = storagePlace();
+    // the note under the bar shows only when it is a warning or a notice;
+    // the sentence is always in Details, beside the ways to change it
+    note.textContent = sentence;
     note.dataset.state = storage.kind === "memory" ? "warning" : "";
+    storageText.textContent = sentence;
+    storageLabel.textContent = place.label;
+    storageIcon.setAttribute("href", "#i-where-" + place.icon);
+    detailsButton.dataset.where = place.icon;
     folderButton.hidden = !canPickFolder;
     folderButton.textContent =
       storage.kind === "folder" ? "Change folder" : "Save to a folder";

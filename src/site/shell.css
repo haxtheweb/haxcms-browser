@@ -1,16 +1,17 @@
 /* Host page for HAXcms in the browser: a status bar and the HAXcms frame. */
 :root {
   color-scheme: light dark;
-  --bar-bg: #0c2a4a;
+  /* the network bar's colors (DDD coalyGray, keystoneYellow) */
+  --bar-bg: #262626;
   --bar-fg: #ffffff;
   --bar-link: #ffd100;
   --ok: #3fe0a5;
   --wait: #ffd100;
   --bad: #ff7a70;
-  --details-bg: #071d35;
-  --details-tile: #0c2a4a;
+  --details-bg: #1b1b1b;
+  --details-tile: #2f2f2f;
   --details-line: #ffffff2e;
-  --details-muted: #c5d3e2;
+  --details-muted: #cfcfcf;
 }
 html,
 body {
@@ -29,59 +30,201 @@ body {
   font-size: 14px;
   line-height: 1.4;
 }
+/* The network bar is a HAX element, so DDD (the HAX design system) adds
+   its global styles to this page: margins, borders and fonts for headings,
+   paragraphs, lists, links and form parts. This page's own parts are styled
+   here, so inside them those go back to the browser's defaults (revert).
+   The :not(svg):not(math) only adds weight: these resets outrank DDD's
+   element rules (a type, two types, a:any-link) and still lose to every
+   class rule below, which say what these parts look like. */
+:where(.bar, .bar-note, .details, .publish, .toast, .message)
+  :is(h1, h2, h3, p, dl, dt, dd, ul, ol, li, pre, code, summary, details, select):not(
+    svg
+  ):not(math) {
+  margin: revert;
+  padding: revert;
+  border: revert;
+  display: revert;
+  min-height: revert;
+  max-width: revert;
+  overflow: revert;
+  position: revert;
+  font-family: revert;
+  font-size: revert;
+  font-weight: revert;
+  font-style: revert;
+  line-height: revert;
+  letter-spacing: revert;
+  list-style: revert;
+  flex-direction: revert;
+  flex-wrap: revert;
+  gap: revert;
+  background-color: revert;
+  color: revert;
+  white-space: revert;
+  border-radius: revert;
+  box-sizing: revert;
+  width: revert;
+  cursor: revert;
+  transition: revert;
+  user-select: revert;
+}
+:where(.bar, .bar-note, .details, .publish, .toast, .message)
+  a:any-link:not(svg):not(math) {
+  font-weight: revert;
+  line-break: revert;
+  text-decoration: revert;
+  background-color: revert;
+  color: revert;
+}
+
+/* The bar is the HAX network's mini bar (hax-network-bar compact); this
+   app's status and functions sit in its pre slot, styled here because
+   slotted content belongs to this page. */
 .bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 16px;
-  padding: 6px 12px;
-  background: var(--bar-bg);
+  flex: none;
   color: var(--bar-fg);
 }
 .bar p {
   margin: 0;
 }
+hax-network-bar {
+  --hax-network-bar-gutter: 12px;
+  display: block;
+  /* until the element loads: the same color, so nothing jumps */
+  min-height: 48px;
+  background: var(--bar-bg);
+}
+.bar-app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
+}
 .bar-status {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-weight: 600;
 }
-.bar-note {
-  flex: 1 1 320px;
-  opacity: 0.92;
+.bar-status #status {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.bar-note[data-state="warning"],
-.bar-note[data-state="notice"] {
+.bar-note {
+  padding: 6px 12px;
+  background: var(--details-bg);
+  border-bottom: 1px solid var(--details-line);
   color: var(--wait);
-  opacity: 1;
+}
+/* the note under the bar is for warnings and notices; where sites are saved
+   otherwise shows as the storage button and in Details */
+.bar-note:empty,
+.bar-note:not([data-state="warning"]):not([data-state="notice"]) {
+  display: none;
 }
 .bar-links {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 8px;
 }
 .bar [hidden] {
   display: none;
 }
-.bar a,
+.bar a:any-link,
 .bar button {
   color: var(--bar-link);
   font: inherit;
   font-weight: 600;
 }
 .bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
   background: none;
   border: 1px solid currentColor;
   border-radius: 4px;
-  padding: 2px 10px;
+  padding: 0 10px;
+  white-space: nowrap;
   cursor: pointer;
+}
+.bar button.primary {
+  background: var(--bar-link);
+  border-color: var(--bar-link);
+  color: var(--bar-bg);
+}
+.bar button:hover {
+  background: #ffffff1f;
+}
+.bar button.primary:hover {
+  background: #ffe066;
 }
 .bar a:focus-visible,
 .bar button:focus-visible {
   outline: 2px solid var(--bar-fg);
   outline-offset: 2px;
+}
+/* where sites are saved: an icon and a short name; opens Details */
+.bar button.bar-where {
+  max-width: 220px;
+  border-color: var(--details-line);
+  color: var(--bar-fg);
+}
+.bar button.bar-where[aria-expanded="true"] {
+  background: var(--details-bg);
+  border-color: var(--bar-fg);
+}
+.bar-where[data-where="memory"] .where-icon {
+  fill: var(--wait);
+}
+.bar-where svg {
+  flex: none;
+  fill: currentColor;
+}
+.bar-where .where-icon {
+  width: 18px;
+  height: 18px;
+}
+.bar-where .caret {
+  width: 18px;
+  height: 18px;
+}
+.bar-where[aria-expanded="true"] .caret {
+  transform: rotate(180deg);
+}
+.where-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* narrower: the status is the dot alone (its words stay for screen readers) */
+@media (max-width: 1100px) {
+  .bar-status #status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 700px) {
+  .bar-app {
+    gap: 6px;
+  }
+  .where-label,
+  .bar-where .caret {
+    display: none;
+  }
+  .bar button {
+    padding: 0 8px;
+  }
+  .bar button.bar-where {
+    padding: 0 6px;
+  }
 }
 .dot {
   width: 10px;
@@ -137,6 +280,19 @@ body {
   text-transform: uppercase;
   color: var(--details-muted);
 }
+.details-where {
+  margin-bottom: 20px;
+  padding: 12px;
+  border: 1px solid var(--details-line);
+  border-radius: 6px;
+  background: var(--details-tile);
+}
+.details-where p {
+  margin: 0 0 10px;
+}
+.details-where .details-actions:not(:has(button:not([hidden]))) {
+  display: none;
+}
 .details dl {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -170,7 +326,9 @@ body {
   max-width: 48ch;
   line-height: 1.5;
 }
-.details a {
+/* :any-link: the HAX elements on this page add DDD's global link color
+   (body a:any-link), which these must outrank */
+.details a:any-link {
   color: var(--bar-link);
   font-weight: 600;
 }
@@ -180,7 +338,7 @@ body {
   height: 18px;
   fill: currentColor;
 }
-.details .install {
+.details a.install:any-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -192,7 +350,7 @@ body {
   font-weight: 700;
   text-decoration: none;
 }
-.details .install:hover {
+.details a.install:any-link:hover {
   background: #fff;
 }
 .community {
@@ -203,7 +361,7 @@ body {
   padding: 0;
   list-style: none;
 }
-.community a {
+.community a:any-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -213,7 +371,7 @@ body {
   color: var(--bar-fg);
   text-decoration: none;
 }
-.community a:hover {
+.community a:any-link:hover {
   border-color: var(--bar-link);
   color: var(--bar-link);
 }
@@ -303,12 +461,6 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 13px;
-}
-@media (max-width: 600px) {
-  .bar-note {
-    flex-basis: 100%;
-    order: 3;
-  }
 }
 /* Publish: a dialog over the page, in the same colors as Details. */
 .publish {
@@ -432,7 +584,7 @@ body {
 .publish-status[data-state="ready"] {
   color: var(--ok);
 }
-.publish-status a {
+.publish-status a:any-link {
   color: var(--bar-link);
   font-weight: 700;
 }
@@ -557,9 +709,10 @@ body {
 /* Installed, the app has no browser bar above it: keep clear of the notch. */
 @media (display-mode: standalone) {
   .bar {
-    padding-top: max(6px, env(safe-area-inset-top));
-    padding-left: max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    background: var(--bar-bg);
   }
 }
 /* Sign in and Save to the cloud: provider choices, in the Publish dialog's colors. */
@@ -596,6 +749,23 @@ body {
 .cloud-webdav summary {
   font-weight: 700;
   cursor: pointer;
+}
+/* DDD draws summaries as its own accordion (a fill, a + / - after the text,
+   no marker); this one keeps the browser's marker and the dialog's colors */
+.publish .cloud-webdav > summary {
+  background-color: transparent;
+  color: inherit;
+  filter: none;
+}
+.publish .cloud-webdav > summary::marker {
+  content: normal;
+}
+.publish .cloud-webdav > summary::after {
+  content: none;
+}
+.publish .cloud-webdav > summary:focus-visible {
+  outline: 2px solid var(--bar-fg);
+  outline-offset: 2px;
 }
 .cloud-webdav label {
   display: block;

@@ -56,7 +56,7 @@
       href="./manifest.webmanifest"
       crossorigin="use-credentials"
     />
-    <meta name="theme-color" content="#0c2a4a" />
+    <meta name="theme-color" content="#262626" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="HAX" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
@@ -64,6 +64,27 @@
   </head>
   <body>
     <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-where-browser" viewBox="0 0 24 24">
+        <path
+          d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 14H4v-4h11v4zm0-5H4V9h11v4zm5 5h-4V9h4v9z"
+        />
+      </symbol>
+      <symbol id="i-where-folder" viewBox="0 0 24 24">
+        <path
+          d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+        />
+      </symbol>
+      <symbol id="i-where-cloud" viewBox="0 0 24 24">
+        <path
+          d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
+        />
+      </symbol>
+      <symbol id="i-where-memory" viewBox="0 0 24 24">
+        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+      </symbol>
+      <symbol id="i-caret" viewBox="0 0 24 24">
+        <path d="M7 10l5 5 5-5z" />
+      </symbol>
       <symbol id="i-download" viewBox="0 0 24 24">
         <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
       </symbol>
@@ -95,40 +116,64 @@
     </svg>
     <header class="bar" role="banner">
       <h1 class="visually-hidden">HAXcms in your browser</h1>
-      <p class="bar-status">
-        <span class="dot" id="dot" aria-hidden="true"></span>
-        <span id="status" role="status">Starting HAXcms in your browser…</span>
-      </p>
+      <!-- the HAX network's mini bar (hax-network-bar compact): the network's
+        properties with this one shown as current, Install HAX, and this
+        app's own status and functions in its pre slot. The editor in the
+        frame has Merlin and the Future Traveler, so the mini bar has none. -->
+      <hax-network-bar compact current="try">
+        <div slot="pre" class="bar-app">
+          <p class="bar-status">
+            <span class="dot" id="dot" aria-hidden="true"></span>
+            <span id="status" role="status"
+              >Starting HAXcms in your browser…</span
+            >
+          </p>
+          <button
+            type="button"
+            class="bar-where"
+            id="details-button"
+            aria-expanded="false"
+            aria-controls="details"
+          >
+            <svg class="where-icon" aria-hidden="true" focusable="false">
+              <use id="storage-icon" href="#i-where-browser"></use>
+            </svg>
+            <span class="visually-hidden">Details. Saving to: </span
+            ><span class="where-label" id="storage-label">This browser</span>
+            <svg class="caret" aria-hidden="true" focusable="false">
+              <use href="#i-caret"></use>
+            </svg>
+          </button>
+          <nav class="bar-links" aria-label="This app">
+            <button
+              type="button"
+              id="signin-button"
+              aria-haspopup="dialog"
+              hidden
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              id="share-button"
+              aria-haspopup="dialog"
+              hidden
+            >
+              Shared with HAX
+            </button>
+            <button
+              type="button"
+              id="publish-button"
+              class="primary"
+              aria-haspopup="dialog"
+              hidden
+            >
+              Publish
+            </button>
+          </nav>
+        </div>
+      </hax-network-bar>
       <p class="bar-note" id="note" role="status"></p>
-      <nav class="bar-links" aria-label="About this demo">
-        <button type="button" id="signin-button" aria-haspopup="dialog" hidden>
-          Sign in
-        </button>
-        <button type="button" id="share-button" aria-haspopup="dialog" hidden>
-          Shared with HAX
-        </button>
-        <button type="button" id="publish-button" aria-haspopup="dialog" hidden>
-          Publish
-        </button>
-        <button type="button" id="reopen-button" hidden></button>
-        <button type="button" id="folder-button" hidden>
-          Save to a folder
-        </button>
-        <button type="button" id="cloud-button" aria-haspopup="dialog" hidden>
-          Save to the cloud
-        </button>
-        <button type="button" id="browser-button" hidden>
-          Stop using the folder
-        </button>
-        <button
-          type="button"
-          id="details-button"
-          aria-expanded="false"
-          aria-controls="details"
-        >
-          Details
-        </button>
-      </nav>
     </header>
     <section
       class="details"
@@ -138,6 +183,31 @@
     >
       <div class="details-inner">
         <div class="details-session">
+          <h2 id="details-where-title">Where your sites are saved</h2>
+          <div
+            class="details-where"
+            role="group"
+            aria-labelledby="details-where-title"
+          >
+            <p id="storage-text"></p>
+            <div class="details-actions">
+              <button type="button" id="reopen-button" hidden></button>
+              <button type="button" id="folder-button" hidden>
+                Save to a folder
+              </button>
+              <button
+                type="button"
+                id="cloud-button"
+                aria-haspopup="dialog"
+                hidden
+              >
+                Save to the cloud
+              </button>
+              <button type="button" id="browser-button" hidden>
+                Stop using the folder
+              </button>
+            </div>
+          </div>
           <h2 id="details-title">About this session</h2>
           <dl id="details-list"></dl>
           <p class="details-report">
@@ -515,6 +585,12 @@
       <div class="message" id="message" hidden></div>
       <iframe id="app" title="HAXcms" hidden></iframe>
     </main>
+    <!-- the network bar comes from the same HAX build the editor uses; if it
+      cannot load, its slotted controls still show and work -->
+    <script
+      type="module"
+      src="./public/build/es6/node_modules/@haxtheweb/hax-network-bar/hax-network-bar.js"
+    ></script>
     <script src="./auth.js"></script>
     <script src="./publish-hosts.js"></script>
     <script src="./publish.js"></script>
