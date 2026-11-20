@@ -105,6 +105,47 @@ test("the host page starts HAXcms and shows the dashboard, signed in", async () 
   assert.deepEqual(settings, { jwt: true, userToken: true });
 });
 
+test("the bar is the HAX network's mini bar, with this app's controls in it", async () => {
+  const bar = await host.evaluate(() => {
+    const element = document.querySelector("header.bar hax-network-bar");
+    const app = document.querySelector('hax-network-bar > [slot="pre"]');
+    return {
+      defined: !!globalThis.customElements.get("hax-network-bar"),
+      compact: element.hasAttribute("compact"),
+      current: element.getAttribute("current"),
+      shadow: !!element.shadowRoot,
+      controls: ["status", "details-button", "publish-button"].every((id) =>
+        app.contains(document.getElementById(id)),
+      ),
+    };
+  });
+  assert.deepEqual(bar, {
+    defined: true,
+    compact: true,
+    current: "try",
+    shadow: true,
+    controls: true,
+  });
+  // where sites are saved: a short name and its icon, the sentence in Details
+  assert.equal(
+    await host.$eval("#storage-label", (el) => el.textContent),
+    "This browser",
+  );
+  assert.equal(
+    await host.$eval("#storage-icon", (el) => el.getAttribute("href")),
+    "#i-where-browser",
+  );
+  assert.match(
+    await host.$eval("#storage-text", (el) => el.textContent),
+    /^Saved in this browser/,
+  );
+  // the note under the bar is only for warnings and notices
+  assert.equal(
+    await host.$eval("#note", (el) => getComputedStyle(el).display),
+    "none",
+  );
+});
+
 test("Details says what is unavailable and what only partly works here", async () => {
   await host.click("#details-button");
   const rows = await host.$$eval("#details-list dt", (terms) =>
@@ -685,7 +726,19 @@ async function pickFolder(page, name, files) {
     name,
     files,
   );
+  await openDetails(page);
   await page.click("#folder-button");
+}
+
+// the ways to change where sites are saved are in Details, under the bar
+async function openDetails(page) {
+  if (
+    (await page.$eval("#details-button", (el) =>
+      el.getAttribute("aria-expanded"),
+    )) !== "true"
+  ) {
+    await page.click("#details-button");
+  }
 }
 
 test("a folder that is not for HAX sites is refused, and says why", async () => {
@@ -749,6 +802,14 @@ test("Save to a folder: sites are written there, and later saves follow", async 
     await host.$eval("#note", (el) => el.textContent),
     /^Saving to the folder "my-hax-sites"/,
   );
+  // and the bar names the folder, with the folder icon
+  assert.deepEqual(
+    await host.evaluate(() => [
+      document.getElementById("storage-label").textContent,
+      document.getElementById("storage-icon").getAttribute("href"),
+    ]),
+    ["my-hax-sites", "#i-where-folder"],
+  );
   assert.deepEqual(await listSites(frame), ["second-site", SITE].sort());
 });
 
@@ -800,6 +861,7 @@ test("a save that cannot reach the folder is reported as failed", async () => {
 });
 
 test("Stop using the folder goes back to the browser's storage", async () => {
+  await openDetails(host);
   await host.click("#browser-button");
   await host.waitForFunction(
     () =>
