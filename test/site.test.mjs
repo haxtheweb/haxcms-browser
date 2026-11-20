@@ -146,6 +146,27 @@ test("the bar is the HAX network's mini bar, with this app's controls in it", as
   );
 });
 
+test("Details says what is unavailable and what only partly works here", async () => {
+  await host.click("#details-button");
+  const rows = await host.$$eval("#details-list dt", (terms) =>
+    Object.fromEntries(
+      terms.map((dt) => [
+        dt.textContent.trim(),
+        dt.nextElementSibling ? dt.nextElementSibling.textContent.trim() : "",
+      ]),
+    ),
+  );
+  await host.click("#details-button");
+  // haxtheweb/issues#3389: document import and export are bundled now
+  const unavailable = rows["Not available here"];
+  assert.match(unavailable, /revisions/);
+  assert.match(unavailable, /Save as PDF/);
+  for (const bundled of ["Word", "EPUB", "PDF import", "readability"]) {
+    assert.ok(!unavailable.includes(bundled), bundled + " is not listed");
+  }
+  assert.match(rows["Limited here"], /allow requests from other websites/);
+});
+
 test("a site can be created, opened and saved to, all inside the browser", async () => {
   // the dashboard's own create-site call, made from the dashboard page
   const created = await frame.evaluate(async (name) => {

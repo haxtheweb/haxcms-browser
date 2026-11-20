@@ -98,6 +98,22 @@ const state = {
 
 const READ_ONLY_METHODS = ["GET", "HEAD", "OPTIONS"];
 
+// What the bundle replaced with stubs (scripts/build.mjs writes the list in
+// place of this string), plus any stub that has loaded since: the features
+// people can't use here, known at boot.
+const BUNDLE_STUBBED = "@@HAXCMS_BROWSER_STUBBED@@";
+
+function unavailableModules() {
+  let stubbed = [];
+  try {
+    stubbed = JSON.parse(BUNDLE_STUBBED);
+  } catch {
+    // not built by scripts/build.mjs
+  }
+  const loaded = Array.from(globalThis.__haxcmsUnavailable || []);
+  return Array.from(new Set(stubbed.concat(loaded))).sort();
+}
+
 function sitesFolder() {
   const HAXCMS = requireBooted();
   return path.join(HAXCMS.HAXCMS_ROOT, HAXCMS.sitesDirectory);
@@ -279,7 +295,7 @@ const handlers = {
       loaded,
       mode: HAXCMS.runtimeServerMode || "multisite",
       bootMs: Math.round(performance.now() - start),
-      unavailable: Array.from(globalThis.__haxcmsUnavailable || []).sort(),
+      unavailable: unavailableModules(),
     };
   },
   async request({ method, url, headers, body, binary }) {

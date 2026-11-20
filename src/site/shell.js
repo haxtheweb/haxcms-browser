@@ -191,13 +191,18 @@
   // what the runtime could not load, as the features people know
   const FEATURES = {
     "git-interface": "revisions (git history)",
-    "puppeteer-core": "PDF export",
-    "html-to-docx": "Word export",
-    "epub-gen-memory": "EPUB export",
-    mammoth: "Word import",
-    unpdf: "PDF import",
-    "text-readability": "readability scores",
+    // PDF export falls back to the browser's print dialog instead
+    // (haxtheweb/issues#3389)
+    "puppeteer-core": "PDFs made on a server (use Save as PDF when printing)",
   };
+  // works only part of the way here: the browser makes these requests, and
+  // only sites that allow requests from other websites answer them
+  // (src/runtime/shims/outbound.cjs, haxtheweb/issues#3389)
+  const LIMITED =
+    "Anything fetched from a web address (importing a site from its " +
+    "address, adding a file from a link, video details, link checks) " +
+    "only works for sites that allow requests from other websites. " +
+    "Otherwise, download the file and upload it.";
 
   function unavailableFeatures(names) {
     const features = (names || [])
@@ -1132,6 +1137,7 @@
     );
     if (lastBoot) {
       add("Not available here", unavailableFeatures(lastBoot.unavailable));
+      add("Limited here", LIMITED);
     }
     add(
       "Build",

@@ -280,7 +280,7 @@ hax-network-bar {
 }
 .details-inner {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px 40px;
   max-width: 1200px;
   margin: 0 auto;
@@ -301,8 +301,8 @@ hax-network-bar {
   border-radius: 6px;
   background: var(--details-tile);
 }
-.details-where p {
-  margin: 0 0 10px;
+.details-where .details-actions {
+  margin-top: 12px;
 }
 .details-where .details-actions:not(:has(button:not([hidden]))) {
   display: none;
@@ -336,10 +336,6 @@ hax-network-bar {
   margin-top: 12px;
   color: var(--details-muted);
 }
-.details-hax p {
-  max-width: 48ch;
-  line-height: 1.5;
-}
 /* :any-link: the HAX elements on this page add DDD's global link color
    (body a:any-link), which these must outrank */
 .details a:any-link {
@@ -351,43 +347,6 @@ hax-network-bar {
   width: 18px;
   height: 18px;
   fill: currentColor;
-}
-.details a.install:any-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 16px 0;
-  padding: 8px 18px;
-  border-radius: 999px;
-  background: var(--bar-link);
-  color: var(--bar-bg);
-  font-weight: 700;
-  text-decoration: none;
-}
-.details a.install:any-link:hover {
-  background: #fff;
-}
-.community {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.community a:any-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--details-line);
-  border-radius: 999px;
-  color: var(--bar-fg);
-  text-decoration: none;
-}
-.community a:any-link:hover {
-  border-color: var(--bar-link);
-  color: var(--bar-link);
 }
 .details a:focus-visible {
   outline: 2px solid var(--bar-fg);
@@ -444,15 +403,8 @@ hax-network-bar {
   color: var(--details-muted);
   font-size: 13px;
 }
-@media (max-width: 800px) {
-  .details-inner {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 @media (forced-colors: active) {
-  .details dl > div,
-  .community a,
-  .details .install {
+  .details dl > div {
     border: 1px solid CanvasText;
   }
 }
