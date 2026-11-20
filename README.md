@@ -170,6 +170,8 @@ The page looks for the broker at `/api/` on its own origin. A fork deployed to V
 
 `vercel.json` is in the repository: import the project in Vercel and deploy, no settings to change. It runs `npm run build:hosted` (`scripts/build-hosted.mjs`), which fetches haxcms-nodejs `main` (or the branch in `HAXCMS_NODEJS_REF`), builds the Worker and puts the site in `site/`. The site works at the root of a domain or under any path. For another host, use the same build command and publish `site/`.
 
+Vercel only builds when this repository changes, so `.github/workflows/vercel-nightly.yml` asks for a production build of `main` every night (and on demand from the Actions tab), to follow haxcms-nodejs `main`. It calls a [Deploy Hook](https://vercel.com/docs/deploy-hooks): create one in the Vercel project (Settings → Git → Deploy Hooks, branch `main`) and store its URL as the repository secret `VERCEL_DEPLOY_HOOK`. Without the secret the job does nothing and says so.
+
 The site's address goes into a canonical link, social cards, `sitemap.xml` and the `Sitemap:` line of `robots.txt`, for search engines and AI agents. On Vercel it is the project's production domain (`VERCEL_PROJECT_PRODUCTION_URL`); elsewhere set `HAX_SITE_URL` (for example `https://hax.example.edu/`). Without either, those are left out rather than guessed. `llms.txt` and `robots.txt` are always there. Publish also packs each published page as its own HTML file with its title, description and text, rendered by haxcms-nodejs as the HAX CLI does ([haxtheweb/issues#3352](https://github.com/haxtheweb/issues/issues/3352)).
 
 ## Licenses
