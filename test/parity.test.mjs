@@ -212,6 +212,23 @@ test("HTTP API: browser and Node give the same results", async () => {
   assert.equal(docs.docxExportIsZip, true, "site export docx");
   assert.equal(docs.epubExportIsZip, true, "site export epub");
   assert.ok(docs.readability, "overview report has readability");
+  // real counts, not the zeros a failing metric answers (both runtimes
+  // answered 0 everywhere while haxcms-nodejs called text-readability's
+  // methods detached). The saved paragraph alone has 21 words, 3 sentences,
+  // 52 syllables and 7 difficult words; the site's other pages add more.
+  assert.ok(docs.readability.lexiconCount >= 21, "readability counts words");
+  assert.ok(
+    docs.readability.sentenceCount >= 3,
+    "readability counts sentences",
+  );
+  assert.ok(
+    docs.readability.syllableCount >= 52,
+    "readability counts syllables",
+  );
+  assert.ok(
+    docs.readability.difficultWords >= 7,
+    "readability finds hard words",
+  );
 
   // a password hash made in the browser verifies on a Node server
   assert.equal(nodeResult.verifiesBrowserHash, true);
