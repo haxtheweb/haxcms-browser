@@ -60,6 +60,9 @@ const builtins = {
   async_hooks: path.join(SHIMS, "async_hooks.cjs"),
   crypto: path.join(SHIMS, "crypto.cjs"),
   http: path.join(SHIMS, "http.cjs"),
+  // outbound requests through the browser's fetch (haxtheweb/issues#3389)
+  https: path.join(SHIMS, "https.cjs"),
+  dns: path.join(SHIMS, "dns.cjs"),
   // not a Node built-in, but replaced the same way: the browser's own image
   // decoder and canvas stand in for the native library
   sharp: path.join(SHIMS, "sharp.cjs"),
@@ -83,9 +86,7 @@ const unavailableBuiltins = new Set([
   "child_process",
   "cluster",
   "dgram",
-  "dns",
   "http2",
-  "https",
   "inspector",
   "module",
   "perf_hooks",
@@ -99,16 +100,15 @@ const unavailableBuiltins = new Set([
 // the runtime has a browser replacement (see README "What is not available").
 const unavailablePackages = [
   "chokidar",
-  "epub-gen-memory",
   "git-interface",
-  "html-to-docx",
-  "mammoth",
   "open",
   "puppeteer-core",
-  "text-readability",
-  "unpdf",
   "ws",
 ];
+
+// worker.cjs holds this string; the build puts the list of stubbed modules
+// in its place (a JSON array, as a string literal)
+const STUBBED_PLACEHOLDER = '"@@HAXCMS_BROWSER_STUBBED@@"';
 
 function isUnavailablePackage(id) {
   return unavailablePackages.some((p) => id === p || id.startsWith(p + "/"));
@@ -148,6 +148,15 @@ const haxcmsBrowserPlugin = {
       loader: "js",
       contents: "module.exports = {};",
     }));
+    // shims reach a haxcms-nodejs module (the one the bundle already has)
+    // with "haxcms-nodejs/lib/<file>.js"
+    build.onResolve(
+      { filter: /^haxcms-nodejs\/lib\/[A-Za-z]+\.js$/ },
+      (args) =>
+        args.path === "haxcms-nodejs/lib/staticPages.js"
+          ? undefined
+          : { path: path.join(SRC, args.path.slice("haxcms-nodejs/".length)) },
+    );
     // One stream implementation for everything. Several packages bring
     // their own old copy of Node's streams (readable-stream 2 and 3); mixed
     // with the Worker's "stream" they break when one pipes into the other
@@ -323,6 +332,24 @@ async function main() {
   fs.writeFileSync(
     path.join(dist, "meta.json"),
     JSON.stringify(result.metafile),
+  );
+  // Every module the bundle replaced with a stub, so the Worker can say what
+  // is unavailable at boot rather than once something first loads it
+  // (haxcms-nodejs loads some, like puppeteer-core, only when used).
+  const stubbed = Object.keys(result.metafile.inputs)
+    .filter((input) => input.startsWith("unavailable:"))
+    .map((input) => input.slice("unavailable:".length))
+    .sort();
+  const workerFile = path.join(dist, "haxcms-worker.js");
+  const worker = fs.readFileSync(workerFile, "utf8");
+  if (worker.split(STUBBED_PLACEHOLDER).length !== 2) {
+    throw new Error("the stub list placeholder must appear once in the Worker");
+  }
+  fs.writeFileSync(
+    workerFile,
+    worker.replace(STUBBED_PLACEHOLDER, () =>
+      JSON.stringify(JSON.stringify(stubbed)),
+    ),
   );
   const kb = (file) =>
     (fs.statSync(path.join(dist, file)).size / 1024).toFixed(0) + " KB";

@@ -23,9 +23,13 @@ const { runScenario } = require("./scenario.cjs");
 
 function request(port, method, url, options) {
   const opts = options || {};
-  const body = opts.json ? Buffer.from(JSON.stringify(opts.json)) : null;
+  let body = opts.json ? Buffer.from(JSON.stringify(opts.json)) : null;
   const headers = Object.assign({ host: "localhost" }, opts.headers || {});
-  if (body) {
+  if (opts.raw) {
+    body = opts.raw.body;
+    headers["content-type"] = opts.raw.contentType;
+    headers["content-length"] = String(body.length);
+  } else if (body) {
     headers["content-type"] = "application/json";
     headers["content-length"] = String(body.length);
   }
