@@ -1581,11 +1581,15 @@ test("the code editor finds its files (it loads them from inside a frame)", asyn
     }
     return { ready: false, libPath: element.libPath, base: document.baseURI };
   });
+  // what went wrong while the page was open; closing it cancels requests
+  // monaco is still making in the background (its language workers), and a
+  // cancelled request is not a missing file
+  const seen = missing.slice();
   await page.close();
-  const detail = JSON.stringify(editor) + "\n" + missing.join("\n");
+  const detail = JSON.stringify(editor) + "\n" + seen.join("\n");
   assert.equal(editor.ready, true, detail);
   assert.deepEqual(
-    missing.filter((entry) => /monaco/.test(entry)),
+    seen.filter((entry) => /monaco/.test(entry)),
     [],
   );
 });

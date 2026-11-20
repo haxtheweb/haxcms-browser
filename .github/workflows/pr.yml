@@ -117,16 +117,9 @@ jobs:
       - name: Install the browser
         env:
           ENGINE: ${{ matrix.engine }}
-        # the system packages come from apt, whose download can stall: stop
-        # a stalled attempt and try again instead of waiting for hours
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 420 npx playwright-core install --with-deps "$ENGINE"; then
-              exit 0
-            fi
-            echo "::warning::browser install attempt $attempt failed or stalled"
-          done
-          exit 1
+        # apt mirror downloads can stall; the script bounds and retries them
+        # and clears what a stopped attempt left behind (the dpkg lock)
+        run: bash scripts/ci-install-browser.sh "$ENGINE"
       - name: Build
         env:
           HAXCMS_NODEJS_SRC: .haxcms-nodejs/src
