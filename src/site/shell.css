@@ -38,9 +38,23 @@ body {
    element rules (a type, two types, a:any-link) and still lose to every
    class rule below, which say what these parts look like. */
 :where(.bar, .bar-note, .details, .publish, .toast, .message)
-  :is(h1, h2, h3, p, dl, dt, dd, ul, ol, li, pre, code, summary, details, select):not(
-    svg
-  ):not(math) {
+  :is(
+    h1,
+    h2,
+    h3,
+    p,
+    dl,
+    dt,
+    dd,
+    ul,
+    ol,
+    li,
+    pre,
+    code,
+    summary,
+    details,
+    select
+  ):not(svg):not(math) {
   margin: revert;
   padding: revert;
   border: revert;
