@@ -119,6 +119,16 @@ test("boots haxcms-nodejs in a Worker and reports what is unavailable", async ()
   for (const name of ["child_process", "git-interface"]) {
     assert.ok(booted.unavailable.includes(name), name + " should be listed");
   }
+  // bundled with their browser builds now (haxtheweb/issues#3389)
+  for (const name of [
+    "epub-gen-memory",
+    "html-to-docx",
+    "mammoth",
+    "text-readability",
+    "unpdf",
+  ]) {
+    assert.ok(!booted.unavailable.includes(name), name + " should load");
+  }
 });
 
 test("HTTP API: browser and Node give the same results", async () => {
@@ -127,7 +137,10 @@ test("HTTP API: browser and Node give the same results", async () => {
       const opts = options || {};
       const headers = Object.assign({}, opts.headers || {});
       let body = null;
-      if (opts.json) {
+      if (opts.raw) {
+        headers["content-type"] = opts.raw.contentType;
+        body = Buffer.from(opts.raw.body).toString("base64");
+      } else if (opts.json) {
         headers["content-type"] = "application/json";
         body = Buffer.from(JSON.stringify(opts.json)).toString("base64");
       }
@@ -158,6 +171,7 @@ test("HTTP API: browser and Node give the same results", async () => {
   assert.deepEqual(browserResult.steps, nodeResult.steps);
   assert.deepEqual(browserResult.outline, nodeResult.outline);
   assert.deepEqual(browserResult.llmsHeadings, nodeResult.llmsHeadings);
+  assert.deepEqual(browserResult.documents, nodeResult.documents);
   // the scenario has to have worked, not just failed the same way twice
   const status = (name) =>
     browserResult.steps.find((s) => s.step === name).status;
@@ -178,6 +192,27 @@ test("HTTP API: browser and Node give the same results", async () => {
     "C < A #0",
     "Home < (root) #0",
   ]);
+  // Word / PDF import, Word / EPUB export and readability run in the browser
+  // (haxtheweb/issues#3389): real output, not a stub that failed both times
+  for (const name of [
+    "save page content",
+    "html-to-docx",
+    "docx-to-html",
+    "pdf-to-html",
+    "readability report",
+    "site export docx",
+    "site export epub",
+  ]) {
+    assert.equal(status(name), 200, name);
+  }
+  const docs = browserResult.documents;
+  assert.equal(docs.docxIsZip, true, "html-to-docx gives a .docx");
+  assert.equal(docs.docxRoundTrip, true, "docx-to-html reads it back");
+  assert.equal(docs.pdfText, true, "pdf-to-html finds the PDF's text");
+  assert.equal(docs.docxExportIsZip, true, "site export docx");
+  assert.equal(docs.epubExportIsZip, true, "site export epub");
+  assert.ok(docs.readability, "overview report has readability");
+
   // a password hash made in the browser verifies on a Node server
   assert.equal(nodeResult.verifiesBrowserHash, true);
 });

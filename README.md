@@ -69,12 +69,14 @@ Not saved offline: fonts and anything else HAXcms loads from other websites (pag
 
 The Worker reports these on boot (`unavailable`), so the editor and the status page can say so:
 
-| Feature           | Why                     | Plan         |
-| ----------------- | ----------------------- | ------------ |
-| Revisions (git)   | needs the `git` program | off at first |
-| PDF / DOCX / EPUB | puppeteer, converters   | off          |
+| Feature                 | Why                     | Instead                                                                                  |
+| ----------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
+| Revisions (git)         | needs the `git` program | not yet ([haxtheweb/issues#3389](https://github.com/haxtheweb/issues/issues/3389))       |
+| PDFs made by the server | puppeteer drives Chrome | PDF export opens the browser's print dialog (Save as PDF), as on a server without Chrome |
 
-Content sanitizing is **not** on this list: jsdom and DOMPurify are bundled, so what you save is cleaned by the same code as on a server.
+Content sanitizing is **not** on this list: jsdom and DOMPurify are bundled, so what you save is cleaned by the same code as on a server. Word import and export, PDF import, EPUB export and readability scores are not on it either: their packages are bundled and give the same results as on Node (`test/parity.test.mjs`).
+
+**Limited here: anything fetched from a web address.** Importing a site from its address, adding a file from a link, video details and link checks are made by the browser (`src/runtime/shims/outbound.cjs`), so they only work for sites that allow requests from other websites (CORS). For the rest, download the file and upload it. haxcms-nodejs's own checks run first (scheme, size, timeout, private addresses); names that only mean something on this device or a local network (`localhost`, `*.local`, a single label like `router`) and private addresses are refused before any request, the browser never sends this page's cookies, and an address a redirect lands on is checked the same way before its body is read. Details lists this under "Limited here".
 
 ## Run it locally
 

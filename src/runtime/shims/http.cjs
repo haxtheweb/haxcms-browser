@@ -1,8 +1,10 @@
 // http for the browser runtime: just enough of Node's http for Express (and
 // the middleware haxcms-nodejs uses) to run when the Worker hands it a
 // request. There is no network server: createServer throws, and requests come
-// in through dispatch() below.
+// in through dispatch() below. Outbound requests (request / get) go through
+// the browser's fetch (outbound.cjs, haxtheweb/issues#3389).
 const { EventEmitter } = require("events");
+const { client } = require("./outbound.cjs");
 const { Readable, Writable } = require("stream");
 
 const STATUS_CODES = {
@@ -266,4 +268,6 @@ module.exports = {
   globalAgent: {},
   createServer,
   dispatch,
+  request: client("http:").request,
+  get: client("http:").get,
 };
