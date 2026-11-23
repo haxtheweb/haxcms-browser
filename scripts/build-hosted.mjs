@@ -6,8 +6,9 @@
  *
  * Does what .github/workflows/pages.yml does in separate steps: fetches
  * haxcms-nodejs (main, or the branch named in HAXCMS_NODEJS_REF) into
- * .haxcms-nodejs, installs it without lifecycle scripts, builds the Worker
- * and assembles the site into site/. The site works at the root of a
+ * .haxcms-nodejs, installs it without lifecycle scripts, builds the Worker,
+ * checks that it boots (scripts/boot-check.mjs; a Worker that cannot start
+ * fails the build) and assembles the site into site/. The site works at the root of a
  * domain or under any path.
  */
 import console from "node:console";
@@ -94,6 +95,10 @@ const env = {
 };
 run(process.execPath, ["scripts/build.mjs"], { env });
 run(process.execPath, ["scripts/bundle-license-check.mjs"], { env });
+// The Worker must start before anything is deployed (haxtheweb/issues#3395):
+// a haxcms-nodejs change that breaks the browser runtime fails the build
+// here, and the host keeps serving the last deployment that worked.
+run(process.execPath, ["scripts/boot-check.mjs"], { env });
 // A build host can hand back part of an earlier site/ from its cache (Vercel
 // keeps every node_modules folder, and the front-end build under
 // site/public is full of them). build-site.mjs refuses to clear a folder it

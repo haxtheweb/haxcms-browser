@@ -59,7 +59,8 @@ npm run lint:security
 - `.github/workflows/pages.yml`: publishes the demo to GitHub Pages from `main`
 - `.github/workflows/vercel-nightly.yml`: nightly production rebuild on Vercel through a Deploy Hook (secret `VERCEL_DEPLOY_HOOK`), so browser.hax.cloud follows haxcms-nodejs main
 - `scripts/start.mjs`: `npm start`, builds the site if missing and serves it
-- `scripts/build-hosted.mjs` + `vercel.json`: the same build in one step for hosts that build from the repository (`npm run build:hosted`)
+- `scripts/build-hosted.mjs` + `vercel.json`: the same build in one step for hosts that build from the repository (`npm run build:hosted`). It runs `scripts/boot-check.mjs` before assembling the site, so a Worker that cannot start fails the build and the host keeps the last deployment that worked (haxtheweb/issues#3395)
+- `scripts/boot-check.mjs`: starts the built Worker in Node's worker threads, with Node's own globals hidden so it sees what a browser Worker sees, boots it and signs in (`npm run boot-check`); needs no browser, so it runs on build hosts. Not a replacement for `npm test`
 - `test/`: parity scenario and Node runner (`parity.test.mjs`), outbound requests through a stand-in public name (`outbound.test.mjs`), the hosted demo end to end (`site.test.mjs`, including Publish through a stand-in broker and Surge), the packer (`publish.test.mjs`), the broker (`broker.test.mjs`, `oauth.test.mjs`), cloud storage (`remote.test.mjs`), the publish hosts (`publish-hosts.test.mjs`), at the root of a domain (`root.test.mjs`), the storage layer against a stand-in folder (`storage.test.mjs`), and the installable app: offline copy, update notice, reset and share target (`offline.test.mjs`); `test/engines/engines.test.mjs` (not part of `npm test`) runs start, save in the browser and reload in WebKit and Firefox with Playwright
 
 ## Pull requests
