@@ -2,7 +2,9 @@ name: vercel-nightly
 # Rebuilds the production site on Vercel every night, so it follows
 # haxcms-nodejs main (the runtime and its front-end build) without a commit here.
 # Vercel only builds when this repository changes; a Deploy Hook starts the
-# same production build of main.
+# same production build of main. That build (npm run build:hosted) checks
+# that the Worker boots before deploying; when it cannot, the build fails and
+# Vercel keeps serving the last deployment that worked (haxtheweb/issues#3395).
 #
 # One-time setup:
 # 1. Vercel: the project -> Settings -> Git -> Deploy Hooks: create a hook
