@@ -64,6 +64,7 @@ const HOST_FILES = [
   "frame.js",
   "offline.js",
   "share.js",
+  "replay.js",
   "publish.js",
   "publish-hosts.js",
   "auth.js",

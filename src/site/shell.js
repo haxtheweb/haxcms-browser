@@ -29,6 +29,10 @@
  * they make gets their name, email and picture as its author, set through
  * HAXcms's own SEO settings route right after the site is created.
  *
+ * A goggles replay link (#replay=, replay.js) starts HAXcms with nothing
+ * saved, makes a scratch site holding only the replayed content, and opens
+ * it with the goggles on the reported piece.
+ *
  * The page can be installed as an app and kept for use with no connection
  * (offline.js), and installed it takes what other apps share to it
  * (share.js).
@@ -61,6 +65,13 @@
   const mount = scope + "app/" + session + "/";
   // a link that asks to start a site (?skeleton=&name=), read once
   let pendingCreate = takeCreateLink();
+  // a goggles replay (#replay=), read once; it never opens the person's sites
+  const replayer = globalThis.HaxcmsReplay({
+    request: signedInRequest,
+    siteTokens,
+    userTokens,
+  });
+  let pendingReplay = replayer.take();
 
   const RUNNING = "HAXcms is running in your browser";
   const NOT_SAVED = "Not saved: your last change did not reach storage";
@@ -1051,6 +1062,29 @@
     throw new Error("HAXcms did not open the site for writing");
   }
 
+  // the headers HAXcms wants on a request that is not for one site (making a
+  // site): the session's jwt and the local user's request token
+  async function userTokens() {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!sessionJwt || attempt) {
+        rememberSignIn(await send("signIn", {}));
+      }
+      const answer = await signedInRequest({
+        method: "GET",
+        url: "/system/api/v1/session/connection-test",
+        headers: { authorization: "Bearer " + sessionJwt },
+      });
+      const granted = answer.json || {};
+      if (granted.authenticated && granted.jwt && granted.userToken) {
+        return {
+          authorization: "Bearer " + granted.jwt,
+          "x-haxcms-user-token": granted.userToken,
+        };
+      }
+    }
+    throw new Error("HAXcms did not sign in the local user");
+  }
+
   // show a page of a site in the frame
   function openPage(site, slug) {
     if (running && frame.contentWindow) {
@@ -1176,6 +1210,35 @@
     return { skeleton, name: String(name || "").slice(0, 200) };
   }
 
+  // the scratch site's replayed page with the goggles on, or the dashboard
+  // with a notice when the replay cannot be opened
+  async function replayAddress(replay) {
+    try {
+      const opened = await replayer.open(replay);
+      notify(
+        ["Goggles replay: a scratch site in this tab only. Nothing is saved."]
+          .concat(opened.notes)
+          .join(" "),
+      );
+      return (
+        mount +
+        "_sites/" +
+        encodeURIComponent(opened.site) +
+        "/" +
+        String(opened.slug).split("/").map(encodeURIComponent).join("/") +
+        "?" +
+        opened.query
+      );
+    } catch (error) {
+      console.warn("[haxcms-browser] replay", error);
+      notify(
+        "The goggles replay could not be opened: " +
+          String((error && error.message) || error),
+      );
+      return mount;
+    }
+  }
+
   // the dashboard address for a create link, or the dashboard itself when
   // HAXcms has no enabled skeleton by that machine name
   async function dashboardAddress(link) {
@@ -1256,7 +1319,12 @@
     // a create link opens once, on the first start that can take it
     const link = pendingCreate;
     pendingCreate = null;
-    const address = await dashboardAddress(link);
+    let address = await dashboardAddress(link);
+    const replay = pendingReplay;
+    pendingReplay = null;
+    if (replay) {
+      address = await replayAddress(replay);
+    }
     message.hidden = true;
     frame.hidden = false;
     if (frame.getAttribute("src")) {
@@ -1324,7 +1392,14 @@
       registerServiceWorker(),
       loadJson("./haxcms-snapshot.json"),
       loadJson("./version.json").catch(() => ({})),
-      chooseStorage(),
+      // a replay starts with nothing saved, whatever was used last time
+      pendingReplay
+        ? Promise.resolve({
+            kind: "memory",
+            handle: null,
+            reason: "this is a goggles replay",
+          })
+        : chooseStorage(),
     ]);
     snapshot = loaded[1];
     version = loaded[2];
