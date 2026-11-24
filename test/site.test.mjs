@@ -1691,6 +1691,68 @@ test("a damaged replay link says so and opens the dashboard", async () => {
   await page.close();
 });
 
+test("a remembered folder whose permission never answers does not stop start-up", async () => {
+  // Chrome can leave queryPermission() on a remembered folder pending for
+  // good; start-up has to carry on without that folder and offer it again
+  const folderStore = (put) =>
+    host.evaluate(async (put) => {
+      const handle = put
+        ? await (
+            await navigator.storage.getDirectory()
+          ).getDirectoryHandle("remembered-folder", { create: true })
+        : null;
+      await new Promise((resolve, reject) => {
+        const open = indexedDB.open("haxcms-browser", 1);
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const transaction = open.result.transaction("handles", "readwrite");
+          const store = transaction.objectStore("handles");
+          if (handle) {
+            store.put(handle, "folder");
+          } else {
+            store.delete("folder");
+          }
+          transaction.oncomplete = () => {
+            open.result.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      });
+    }, put);
+  await folderStore(true);
+  const page = await browser.newPage();
+  try {
+    await page.evaluateOnNewDocument(() => {
+      globalThis.FileSystemHandle.prototype.queryPermission = () =>
+        new Promise(() => {});
+    });
+    await page.goto(server.url, { waitUntil: "load" });
+    await page.waitForFunction(
+      () =>
+        ["ready", "error"].includes(
+          document.getElementById("dot").dataset.state,
+        ),
+      { timeout: 90000 },
+    );
+    const state = await page.evaluate(() => ({
+      dot: document.getElementById("dot").dataset.state,
+      reopen: document.getElementById("reopen-button").hidden
+        ? ""
+        : document.getElementById("reopen-button").textContent,
+      frame: !document.getElementById("app").hidden,
+    }));
+    assert.deepEqual(state, {
+      dot: "ready",
+      reopen: 'Reopen folder "remembered-folder"',
+      frame: true,
+    });
+  } finally {
+    await page.close();
+    await folderStore(false);
+  }
+});
+
 test("nothing HAXcms asks for reaches the web server", () => {
   // every HAXcms page and API request is answered in the browser; the static
   // server only ever sees the host page's files and the front-end build

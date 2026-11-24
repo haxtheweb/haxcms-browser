@@ -536,11 +536,37 @@
       // sign in again first; meanwhile this browser's storage
       rememberedCloud = cloudChoice;
     }
-    remembered = await recallFolder();
-    if (remembered && (await permission(remembered, false)) === "granted") {
+    remembered = await answerSoon(recallFolder(), null);
+    if (
+      remembered &&
+      (await answerSoon(permission(remembered, false), "prompt")) === "granted"
+    ) {
       return { kind: "folder", handle: remembered, reason: "" };
     }
+    // a folder that is not granted, or whose permission never answers, is
+    // kept: the Reopen folder button asks for it again
     return browserStorage();
+  }
+
+  // Start-up never waits on the browser for long. Chrome can leave
+  // queryPermission() on a remembered folder pending for good, and a start
+  // that waited on it would never begin. Whatever has not answered in
+  // STARTUP_WAIT counts as the fallback, and start-up carries on.
+  const STARTUP_WAIT = 2000;
+  function answerSoon(promise, fallback) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(fallback), STARTUP_WAIT);
+      Promise.resolve(promise).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        () => {
+          clearTimeout(timer);
+          resolve(fallback);
+        },
+      );
+    });
   }
 
   // What is in a folder the user picked: "empty", "sites" (every folder in it
