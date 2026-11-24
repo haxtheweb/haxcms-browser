@@ -15,6 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 import puppeteer from "puppeteer-core";
 import { startPagesServer } from "./helpers/pages-server.mjs";
 import { redirectHosts, redirectSurge } from "./helpers/surge-stand-in.mjs";
@@ -1592,6 +1593,102 @@ test("the code editor finds its files (it loads them from inside a frame)", asyn
     seen.filter((entry) => /monaco/.test(entry)),
     [],
   );
+});
+
+// what the goggles' packBundle (webcomponents haxcms-goggles-report.js) makes
+function packReplay(bundle) {
+  return (
+    "z." +
+    zlib
+      .deflateRawSync(Buffer.from(JSON.stringify(bundle)))
+      .toString("base64url")
+  );
+}
+
+test("a goggles replay link opens a scratch site, never the person's sites", async () => {
+  const packed = packReplay({
+    v: 1,
+    scope: "page",
+    tag: "replay-target",
+    path: [{ tag: "replay-target", n: 0 }],
+    mark: [1],
+    html: '<p>before</p><div id="replayed"><strong>the reported block</strong></div><img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" data-goggles-placeholder="png" alt="">',
+    swapped: ["png"],
+    theme: "clean-one",
+    unexpected: "dropped",
+  });
+  const page = await browser.newPage();
+  await page.goto(server.url + "#replay=" + packed, { waitUntil: "load" });
+  await page.waitForFunction(
+    () =>
+      ["ready", "error"].includes(document.getElementById("dot").dataset.state),
+    { timeout: 90000 },
+  );
+  // read once: the bundle is taken out of the address
+  assert.equal(new URL(page.url()).hash, "");
+  // nothing saved, whatever the person used last time
+  assert.match(
+    await page.$eval("#storage-text", (el) => el.textContent),
+    /Not being saved: this is a goggles replay/,
+  );
+  let replayFrame = null;
+  for (let i = 0; i < 120 && !replayFrame; i++) {
+    replayFrame = page
+      .frames()
+      .find((f) => /\/_sites\/goggles-replay\//.test(f.url()));
+    if (!replayFrame) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  assert.ok(replayFrame, "the replayed page opens in the frame");
+  const opened = new URL(replayFrame.url());
+  assert.equal(opened.searchParams.get("goggles"), "code");
+  assert.equal(opened.searchParams.get("goggles-at"), "1");
+  // the content went in through HAXcms (sanitized like any page) and shows
+  await replayFrame.waitForFunction(
+    () => {
+      const strong = Array.from(document.querySelectorAll("strong")).find(
+        (el) => el.textContent === "the reported block",
+      );
+      return !!strong;
+    },
+    { timeout: 30000 },
+  );
+  // the scratch HAXcms has only the replay: the person's sites are not there
+  const sites = await replayFrame.evaluate(async () => {
+    const session = await fetch("../../system/api/v1/session/connection-test");
+    const granted = await session.json();
+    const response = await fetch("../../system/api/v1/sites", {
+      headers: {
+        authorization: "Bearer " + granted.jwt,
+        "x-haxcms-user-token": granted.userToken,
+      },
+    });
+    return response.status + " " + JSON.stringify(await response.json());
+  });
+  assert.match(sites, /^200 /);
+  assert.match(sites, /goggles-replay/);
+  assert.ok(
+    !sites.includes('"' + SITE + '"'),
+    "the person's site is not loaded",
+  );
+  await page.close();
+});
+
+test("a damaged replay link says so and opens the dashboard", async () => {
+  const page = await browser.newPage();
+  await page.goto(server.url + "#replay=x.<script>", { waitUntil: "load" });
+  await page.waitForFunction(
+    () =>
+      ["ready", "error"].includes(document.getElementById("dot").dataset.state),
+    { timeout: 90000 },
+  );
+  await page.waitForFunction(
+    () => /replay could not be opened/.test(document.body.textContent),
+    { timeout: 30000 },
+  );
+  assert.equal(new URL(page.url()).hash, "");
+  await page.close();
 });
 
 test("nothing HAXcms asks for reaches the web server", () => {
