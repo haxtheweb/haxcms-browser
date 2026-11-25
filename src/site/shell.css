@@ -754,3 +754,14 @@ hax-network-bar {
   color: var(--bar-fg);
   font: inherit;
 }
+/* Open in HAX: the site a tab sent, named the way Share names what came. */
+.handoff-site {
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--details-tile);
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+#handoff-title {
+  overflow-wrap: anywhere;
+}

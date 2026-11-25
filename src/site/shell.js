@@ -113,6 +113,15 @@
     openPage,
     notify,
   });
+  // a site handed over by the tab that opened this one (?handoff=1)
+  const handoff = globalThis.HaxcmsHandoff({
+    request: signedInRequest,
+    userTokens,
+    canSave: () => !storage.elsewhere,
+    openPage,
+    notify,
+  });
+  handoff.take();
   // the last change could not be written to storage
   let saveProblem = false;
 
@@ -1401,6 +1410,7 @@
     } else {
       frame.src = address;
     }
+    handoff.started();
   }
 
   // Take the HAXcms page out of the frame and wait until it is gone. A page

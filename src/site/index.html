@@ -464,6 +464,22 @@
         </div>
       </form>
     </dialog>
+    <dialog class="publish" id="handoff" aria-labelledby="handoff-title">
+      <form method="dialog">
+        <h2 id="handoff-title">
+          <span id="handoff-from"></span> wants to send you a site
+        </h2>
+        <p class="handoff-site" id="handoff-site"></p>
+        <p id="handoff-details"></p>
+        <p class="publish-status" id="handoff-status" role="status"></p>
+        <div class="publish-actions">
+          <button type="button" id="handoff-decline">Don't allow</button>
+          <button type="button" id="handoff-allow" class="primary">
+            Allow and open it
+          </button>
+        </div>
+      </form>
+    </dialog>
     <section class="toast" id="toast" aria-label="Notice" hidden>
       <p id="toast-text" role="status"></p>
       <div class="toast-actions">
@@ -503,6 +519,7 @@
     <script src="./accounts.js"></script>
     <script src="./offline.js"></script>
     <script src="./share.js"></script>
+    <script src="./handoff.js"></script>
     <script src="./replay.js"></script>
     <script src="./shell.js"></script>
     <script src="./frame.js"></script>

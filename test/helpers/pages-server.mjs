@@ -75,6 +75,9 @@ export function startPagesServer(folder, name, port = 0) {
       TYPES[path.extname(file).toLowerCase()] || "application/octet-stream",
     );
     res.setHeader("cache-control", "max-age=600");
+    // GitHub Pages answers every file with this; open-in-hax.js needs it to
+    // load as a module on another site
+    res.setHeader("access-control-allow-origin", "*");
     fs.createReadStream(file).pipe(res);
   });
   return new Promise((resolve) => {

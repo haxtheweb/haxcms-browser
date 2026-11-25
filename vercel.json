@@ -41,6 +41,15 @@
           "value": "no-cache"
         }
       ]
+    },
+    {
+      "source": "/open-in-hax.js",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
     }
   ]
 }
