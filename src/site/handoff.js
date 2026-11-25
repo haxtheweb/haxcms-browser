@@ -324,7 +324,9 @@
       const theme = text(about.theme, 100);
       let created = await make(theme);
       if (created.status === 400 && theme) {
-        // a theme this build does not have (a custom theme): the default
+        // a theme HAXcms can't select: not in its registry, and not the
+        // site's own custom build (which createSite keeps as the theme): the
+        // default
         created = await make("");
       }
       const address = String((created.json && created.json.link) || "");
