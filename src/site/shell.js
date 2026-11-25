@@ -63,7 +63,8 @@
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
   const mount = scope + "app/" + session + "/";
-  // a link that asks to start a site (?skeleton=&name=), read once
+  // a link that asks to start a site (?skeleton=&name=) or to remix a
+  // published one (?remix=), read once
   let pendingCreate = takeCreateLink();
   // a goggles replay (#replay=), read once; it never opens the person's sites
   const replayer = globalThis.HaxcmsReplay({
@@ -1223,12 +1224,22 @@
     }
     const skeleton = url.searchParams.get("skeleton");
     const name = url.searchParams.get("name");
-    if (skeleton === null && name === null) {
+    const remix = url.searchParams.get("remix");
+    if (skeleton === null && name === null && remix === null) {
       return null;
     }
     url.searchParams.delete("skeleton");
     url.searchParams.delete("name");
+    url.searchParams.delete("remix");
     globalThis.history.replaceState(globalThis.history.state, "", url.href);
+    // ?remix=<address of a published HAX site>: the remix_site tool and form
+    // every published HAX site carries hand people this. It opens the
+    // dashboard's From a URL import with the address and the HAXcms kind
+    // filled in; nothing is fetched or made until the person continues.
+    if (remix !== null) {
+      const address = remixAddress(remix);
+      return address === "" ? null : { remix: address };
+    }
     // a machine name, checked against HAXcms's skeleton list before use
     if (skeleton === null || !/^[a-z0-9-]{1,100}$/.test(skeleton)) {
       return null;
@@ -1265,11 +1276,43 @@
     }
   }
 
-  // the dashboard address for a create link, or the dashboard itself when
-  // HAXcms has no enabled skeleton by that machine name
+  // the address a remix link names, as an http(s) URL without a login,
+  // query or fragment, or "" when it is not one
+  function remixAddress(value) {
+    if (typeof value !== "string" || value.length > 2048) {
+      return "";
+    }
+    let url;
+    try {
+      url = new URL(value.trim());
+    } catch (e) {
+      return "";
+    }
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      url.username !== "" ||
+      url.password !== ""
+    ) {
+      return "";
+    }
+    url.search = "";
+    url.hash = "";
+    return url.href;
+  }
+
+  // the dashboard address for a create or remix link, or the dashboard
+  // itself when HAXcms has no enabled skeleton by that machine name
   async function dashboardAddress(link) {
     if (!link) {
       return mount;
+    }
+    if (link.remix) {
+      // app-hax's own deep link into the From a URL import
+      const query = new URLSearchParams({
+        "import-url": link.remix,
+        "import-type": "haxcms",
+      });
+      return mount + "?" + query.toString();
     }
     let listed = [];
     try {

@@ -700,6 +700,50 @@ test("an unknown or malformed ?skeleton= opens the normal start screen", async (
   }
 });
 
+// ?remix=<address>: every published HAX site's remix_site tool and form
+// links here; the dashboard's From a URL import opens with it filled in
+test("a ?remix= link hands the dashboard its From a URL import", async () => {
+  const { page, inner } = await openCreateLink(
+    "?remix=" +
+      encodeURIComponent("https://lab.hax.cloud/course/?x=1#top") +
+      "&name=ignored",
+  );
+  try {
+    // read once and taken out of the address, so a reload starts fresh
+    const address = new URL(page.url());
+    assert.equal(address.search, "");
+    const opened = new URL(inner.url());
+    // query and fragment dropped: the site's own address only
+    assert.equal(
+      opened.searchParams.get("import-url"),
+      "https://lab.hax.cloud/course/",
+    );
+    assert.equal(opened.searchParams.get("import-type"), "haxcms");
+    // a remix is not a starter: no create step is asked for
+    assert.equal(opened.searchParams.get("use-case"), null);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a malformed ?remix= opens the normal start screen", async () => {
+  for (const query of [
+    "?remix=javascript%3Aalert(1)",
+    "?remix=ftp%3A%2F%2Fexample.com%2F",
+    "?remix=https%3A%2F%2Fuser%3Apass%40example.com%2F",
+    "?remix=not%20a%20url",
+    "?remix=",
+  ]) {
+    const { page, inner } = await openCreateLink(query);
+    try {
+      assert.equal(new URL(page.url()).search, "", query);
+      assert.equal(new URL(inner.url()).search, "", query);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
 // The folder picker is a native dialog, so the tests hand the page a folder
 // the same way the picker would: a directory handle. These come from the
 // browser's private file system, which is the same kind of object.
