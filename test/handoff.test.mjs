@@ -26,7 +26,14 @@ let browser;
 const SITE_JSON = {
   title: "My 90s page",
   description: "Under construction",
-  metadata: { site: { name: "my-90s-page" } },
+  metadata: {
+    site: { name: "my-90s-page" },
+    // a theme only the site's own custom build has
+    theme: {
+      element: "custom-geocities-theme",
+      path: "./custom/build/custom.es6.js",
+    },
+  },
   items: [
     {
       id: "item-home",
@@ -234,7 +241,12 @@ test("a site sent from another website opens in HAX once the person allows it", 
       const custom = await (
         await app.fetch(new URL("custom/build/custom.es6.js", base))
       ).text();
-      return { title: site.items[0].title, page, custom };
+      return {
+        title: site.items[0].title,
+        page,
+        custom,
+        theme: site.metadata.theme,
+      };
     }, done.name);
     assert.equal(saved.title, "Welcome");
     assert.match(saved.page, /Welcome to my homepage/);
@@ -242,6 +254,9 @@ test("a site sent from another website opens in HAX once the person allows it", 
     assert.doesNotMatch(saved.page, /<script/);
     // the site's own code came with it (on in the browser)
     assert.match(saved.custom, /under construction/);
+    // and its theme is the one selected, not the default
+    assert.equal(saved.theme.element, "custom-geocities-theme");
+    assert.equal(saved.theme.path, "./custom/build/custom.es6.js");
   } finally {
     await tab.close();
     await generator.close();
