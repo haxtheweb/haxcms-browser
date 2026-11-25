@@ -294,6 +294,9 @@
       const make = async (theme) => {
         const site = {
           name,
+          // the site's own title (createSite keeps it as plain text), else
+          // the one the person was shown when asked
+          title: text(about.title, 200) || offer.title || "",
           description: text(about.description, 500) || offer.title,
         };
         if (theme) {

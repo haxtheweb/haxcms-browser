@@ -246,6 +246,7 @@ test("a site sent from another website opens in HAX once the person allows it", 
         page,
         custom,
         theme: site.metadata.theme,
+        siteTitle: site.title,
       };
     }, done.name);
     assert.equal(saved.title, "Welcome");
@@ -257,6 +258,8 @@ test("a site sent from another website opens in HAX once the person allows it", 
     // and its theme is the one selected, not the default
     assert.equal(saved.theme.element, "custom-geocities-theme");
     assert.equal(saved.theme.path, "./custom/build/custom.es6.js");
+    // the site keeps its title, not its folder name
+    assert.equal(saved.siteTitle, "My 90s page");
   } finally {
     await tab.close();
     await generator.close();
