@@ -50,7 +50,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "9.39.5",
-    "@haxtheweb/haxcms-nodejs": "^26.8.1",
+    "@haxtheweb/haxcms-nodejs": "^26.11.0",
     "@jspm/core": "2.1.0",
     "axe-core": "4.14.0",
     "esbuild": "0.28.2",
