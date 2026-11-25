@@ -64,6 +64,9 @@ const HOST_FILES = [
   "frame.js",
   "offline.js",
   "share.js",
+  "handoff.js",
+  // loaded by other websites (Open in HAX); in the offline copy like the rest
+  "open-in-hax.js",
   "replay.js",
   "publish.js",
   "publish-hosts.js",

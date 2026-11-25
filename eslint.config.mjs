@@ -128,5 +128,10 @@ export default [
       "no-var": "error",
     },
   },
+  {
+    // the Open in HAX helper other websites load as a module
+    files: ["src/site/open-in-hax.js"],
+    languageOptions: { sourceType: "module" },
+  },
   eslintConfigPrettier,
 ];

@@ -51,4 +51,9 @@ export default [
       "no-restricted-syntax": ["error", noInterpolatedExec, noOptionalChaining],
     },
   },
+  {
+    // the Open in HAX helper other websites load as a module
+    files: ["src/site/open-in-hax.js"],
+    languageOptions: { sourceType: "module" },
+  },
 ];

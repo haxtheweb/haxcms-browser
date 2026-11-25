@@ -32,6 +32,48 @@ Which services a deployment offers depends on the OAuth apps whoever runs it has
 
 `https://browser.hax.cloud/?remix=<address of a published HAX site>` opens the dashboard's From a URL import with that address and the HAXcms kind filled in; nothing is fetched or made until the person continues. Every published HAX site whose license allows derivatives links here from its `remix_site` WebMCP tool and form, so a visitor or their agent can make their own copy to change. Published HAX sites answer cross-origin requests (`Access-Control-Allow-Origin: *` on GitHub Pages and Vercel), which is what lets the browser read them. Only an `http(s)` address without a login is taken; its query and fragment are dropped.
 
+### Open in HAX: hand a site over from another website
+
+A website that builds a HAXcms site in the browser (a site generator, a converter, a wizard) can open what it made straight in HAX, with no download and no publishing step ([haxtheweb/issues#3405](https://github.com/haxtheweb/issues/issues/3405)). It opens `https://browser.hax.cloud/?handoff=1` and passes the site zip from its tab to the new one with `postMessage`. The zip never reaches a server. Before anything is accepted, HAX asks the person, naming the sending website. Then the site goes through HAXcms's own import and create routes, so it is checked and sanitized like any import, and it opens in the editor.
+
+The easy way is the helper this site serves. It has no dependencies, and it opens whichever HAX it was loaded from, so a self-hosted copy works the same way:
+
+```html
+<script type="module" src="https://browser.hax.cloud/open-in-hax.js"></script>
+<open-in-hax site-title="My homepage" generator="My generator"></open-in-hax>
+<script>
+  // resolve the site as a HAXcms site zip (a Blob or ArrayBuffer)
+  document.querySelector("open-in-hax").getSite = async () => zipBlob;
+  document.addEventListener("open-in-hax-result", (e) => console.log(e.detail));
+</script>
+```
+
+Or call `openInHax({ getSite, title, generator })` from your own button's click handler (`import { openInHax } from "https://browser.hax.cloud/open-in-hax.js"`). Call it from a click, or the browser blocks the new tab. Don't set `Cross-Origin-Opener-Policy: same-origin` on the generator page: it cuts the link between the two tabs.
+
+**The site zip** is what HAXcms's Download site gives: `site.json` with `pages/`, `files/` and optionally `custom/build/custom.es6.js` (a custom theme), at the top of the zip or one folder down. `site.json` must be a HAXcms site outline. That means 1 to 5000 items, each with a unique id (letters, digits, `_ . : -`), its page at `pages/…/….html`, any `metadata.files` under `files/`, and `title`, `slug` and `parent` as text if given. Anything else is refused whole. The theme named in `metadata.theme.element` is used when this HAX has it; otherwise the site gets the default theme. Up to 100 MB.
+
+**The protocol** (`hax-handoff`, version 1), for anyone writing their own sender. Every message is `{ protocol: "hax-handoff", version: 1, type, ... }`:
+
+| type      | from             | carries                                                                                                                  |
+| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `ready`   | HAX → the opener | `versions: [1]`                                                                                                          |
+| `offer`   | generator        | `generator: { name, url }`, `title`, `format: "haxcms-zip"`, `size` (bytes). Shown in the prompt                         |
+| `consent` | HAX              | `allowed: true` or `false`                                                                                               |
+| `payload` | generator        | `data`: the zip as a `Blob` or `ArrayBuffer`                                                                             |
+| `result`  | HAX              | `ok: true, name` or `ok: false, error`: `declined`, `too-large`, `not-a-zip`, `invalid-site`, `timeout`, `import-failed` |
+
+Rules HAX keeps:
+
+- It takes messages only from the window that opened it, and after the offer only from that offer's origin.
+- It reads no payload before the person allows it, and refuses a payload bigger than its offer said.
+- It ignores unknown versions and types.
+- Each tab does one handoff, and `?handoff` is removed from the address once read.
+- The prompt names the sending website by the origin the browser reports, not by what the sender claims.
+
+Senders should post only to HAX's origin, never `"*"`.
+
+**Why this is on here and off on servers.** A site zip can carry the site's own JavaScript (`custom.es6.js`). Here HAXcms runs in the person's own tab and serves only them, so this build turns site zip import on (`HAXCMS_SITE_ZIP_IMPORT=true` in the Worker). haxcms-nodejs and haxcms-php leave it off unless the operator turns it on (`security.siteZipImport`).
+
 > Status: early. The full haxcms-nodejs Express app runs in a Worker and the real HAX front end talks to it through a service worker, with the same results as Node (see [Parity](#parity)). Sites are saved to browser storage or a folder on your computer. Next: the status element inside HAX's own top bar, opening a single site folder directly, and other browsers.
 
 ## How it works

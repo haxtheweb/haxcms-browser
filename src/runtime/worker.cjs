@@ -271,6 +271,9 @@ const handlers = {
     process.env.HAXCMS_ROOT = haxcmsRoot + "/";
     process.env.HAXCMS_EMBEDDED = "1";
     process.env.HAXCMS_DISABLE_JWT_CHECKS = "true";
+    // a site zip (Open in HAX, haxtheweb/issues#3405) can carry the site's own
+    // code; servers leave this off, here HAXcms serves only this tab's person
+    process.env.HAXCMS_SITE_ZIP_IMPORT = "true";
     process.chdir(haxcmsRoot);
     const appModule = require("haxcms-nodejs/app.js");
     if (!appModule.embeddedRuntime) {
