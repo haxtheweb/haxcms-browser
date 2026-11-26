@@ -65,8 +65,10 @@ const HOST_FILES = [
   "offline.js",
   "share.js",
   "handoff.js",
-  // loaded by other websites (Open in HAX); in the offline copy like the rest
+  // loaded by other websites (Open in HAX, and the import rules generators
+  // check a site with); in the offline copy like the rest
   "open-in-hax.js",
+  "hax-site-check.js",
   "replay.js",
   "publish.js",
   "publish-hosts.js",
