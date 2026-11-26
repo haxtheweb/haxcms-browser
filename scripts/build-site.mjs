@@ -6,6 +6,8 @@
  *
  * Output:
  *   index.html, shell.js, shell.css   the host page (src/site)
+ *   hax-site-check.js                 haxcms-nodejs's site zip import rules,
+ *                                     for generators (lib/shared)
  *   sw.js                             the service worker that relays requests
  *   haxcms-worker.js                  the Worker bundle (dist)
  *   haxcms-snapshot.json              its data snapshot (dist)
@@ -198,6 +200,21 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 copyDir(path.join(root, "src/site"), out);
+// hax-site-check.js: the site zip import rules from the same haxcms-nodejs
+// the Worker runs, for generators to check a site before Open in HAX
+// (haxtheweb/issues#3426). Served unchanged, so the importer and generators
+// cannot disagree. A haxcms-nodejs without it (before that release) builds
+// without it.
+const siteCheck = path.join(SRC, "lib", "shared", "hax-site-check.js");
+if (fs.existsSync(siteCheck)) {
+  fs.copyFileSync(siteCheck, path.join(out, "hax-site-check.js"));
+} else {
+  console.warn(
+    "hax-site-check.js not found in haxcms-nodejs (" +
+      siteCheck +
+      "); the site is built without it",
+  );
+}
 writeDiscoveryFiles(out, siteUrl());
 for (const file of ["haxcms-worker.js", "haxcms-snapshot.json"]) {
   fs.copyFileSync(path.join(dist, file), path.join(out, file));

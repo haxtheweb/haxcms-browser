@@ -54,6 +54,9 @@ function siteZip() {
       "<p>Welcome to my homepage</p><script>alert(1)</script>",
     "my-90s-page/custom/build/custom.es6.js":
       "export const geocities = 'under construction';",
+    // an empty file, as generators and static builds make (.nojekyll): it
+    // made haxcms-nodejs refuse the whole zip (haxtheweb/issues#3426)
+    "my-90s-page/.nojekyll": "",
   });
 }
 
@@ -66,6 +69,8 @@ function generatorPage(siteUrl) {
 <open-in-hax site-title="My 90s page" generator="Fixture generator"></open-in-hax>
 <script type="module">
   import { openInHax } from ${JSON.stringify(siteUrl + "open-in-hax.js")};
+  // the import rules, from the same site (haxtheweb/issues#3426)
+  import ${JSON.stringify(siteUrl + "hax-site-check.js")};
   globalThis.results = [];
   globalThis.openInHax = openInHax;
   document.addEventListener("open-in-hax-result", (e) => results.push(e.detail));
@@ -309,6 +314,50 @@ test("only the opener can offer, and declining sends nothing and opens the start
     );
   } finally {
     await tab.close();
+    await generator.close();
+  }
+});
+
+test("a generator checks a site with the importer's rules from this site", async () => {
+  const generator = await browser.newPage();
+  try {
+    await generator.goto(generatorUrl, { waitUntil: "load" });
+    await generator.waitForFunction(() => !!globalThis.HAXSiteCheck);
+    const checked = await generator.evaluate((siteJson) => {
+      const check = globalThis.HAXSiteCheck;
+      const good = check.checkHaxSite({
+        siteJson: JSON.stringify(siteJson),
+        files: [
+          "my-90s-page/site.json",
+          "my-90s-page/pages/home/index.html",
+          "my-90s-page/.nojekyll",
+        ],
+        zipBytes: 2000,
+      });
+      const bad = check.checkHaxSite({
+        siteJson: Object.assign({}, siteJson, {
+          title: 7,
+          items: [{ id: "bad id", location: "../x.html" }],
+        }),
+      });
+      return {
+        good: good.ok,
+        goodProblems: good.problems.length,
+        bad: bad.ok,
+        badCodes: bad.problems.map((p) => p.code),
+        version: good.version,
+      };
+    }, SITE_JSON);
+    assert.equal(checked.good, true);
+    assert.equal(checked.goodProblems, 0);
+    assert.equal(checked.bad, false);
+    assert.deepEqual(checked.badCodes, [
+      "SITE_TITLE",
+      "ITEM_ID",
+      "ITEM_LOCATION",
+    ]);
+    assert.ok(checked.version);
+  } finally {
     await generator.close();
   }
 });

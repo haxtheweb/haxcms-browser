@@ -23,6 +23,17 @@
  * declined, too-large, not-a-zip, invalid-site, timeout, import-failed,
  * popup-blocked, closed.
  *
+ * Check a site before offering the button with hax-site-check.js, served
+ * beside this file: the importer's own rules, returning every problem
+ * (haxtheweb/issues#3426):
+ *
+ *   import "https://browser.hax.cloud/hax-site-check.js";
+ *   const { ok, problems } = globalThis.HAXSiteCheck.checkHaxSite({
+ *     siteJson,              // site.json, decoded or as text
+ *     files: ["site.json", "pages/home/index.html"], // paths in the zip
+ *     zipBytes: zipBlob.size,
+ *   });
+ *
  * The HAX it opens is the one this file was loaded from, so a self-hosted
  * copy of browser.hax.cloud works the same way. No dependencies.
  */
