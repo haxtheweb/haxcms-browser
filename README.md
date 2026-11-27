@@ -168,10 +168,29 @@ Scope and plan: [haxtheweb/issues#3341](https://github.com/haxtheweb/issues/issu
 
 - **Surge** (no setup): an address (`something.surge.sh`, or a domain you pointed at Surge) and a Surge account. The Worker packs the site into a gzipped tarball and the page sends it through the **publish broker** (`api/surge/deploy`) to the [Surge deploy API](https://surge.sh/docs/api/deploys). Surge accounts: a pasted token (`surge tokens add --domain <address>` makes one that only works for that address), or an email and password, which the broker sends to Surge once to get a token (`api/surge/token`; Surge creates the account if there is none).
 - **GitHub Pages, GitLab Pages, Codeberg Pages, Netlify, Vercel** (when the deployment has set them up): a name, and the person's account on that host, signed in with a popup. The page then publishes straight to the host's API from the browser (`src/site/publish-hosts.js`), so there is no size limit of ours. Each host's dialog note says what it makes (a public repository, a project, a site) and the host's own limits.
+- **A Waypoint server** (on every copy, with or without the publish service): a server that builds a static copy of the site and broadcasts it at a web address, where the person can also add their own domain. See [Publishing to a Waypoint](#publishing-to-a-waypoint).
+
+The dialog calls every place in this list a **Waypoint**: where a site goes next, somewhere that stores it, puts it on the web, or both. For a Waypoint server it uses the network's two verbs: **beam** sends the site there, to a private preview address, and **broadcast** makes it live. The button reads Broadcast (both steps) or Beam (the first only). The other places publish in one step, and the button reads Publish.
 
 Every host gets the same files (`src/runtime/publish.cjs`): what `hax site site:surge` publishes, with `ghpages.html` served as `index.html`, `llms-full.txt` added as the in-browser HAXcms serves it (none for private sites; a site's own file is kept), and without what only a local HAXcms needs (`build/`, `wc-registry.json`, `assets/babel*`, `node_modules`, `dist`, logs, dotfiles, symbolic links). The site itself is not changed. GitHub Pages also gets `.nojekyll`; GitLab Pages gets the site in `public/` plus a `.gitlab-ci.yml`.
 
 The host and name (or Surge address) last used are remembered for each site in this browser; a site's `CNAME` (where the CLI published it) is used first for Surge.
+
+### Publishing to a Waypoint
+
+A [Waypoint](https://github.com/haxtheweb/issues/issues/3422) is a server that builds a static copy of a site and serves it at a web address. You keep editing here; publishing again to the same name replaces what is there, and the Waypoint keeps earlier versions to go back to. It answers this page directly, so it needs no publish broker and is offered on every copy of the page (`src/site/publish-waypoint.js`).
+
+1. The person gives the address of the Waypoint and a name for the site. The page asks that address what it is (`/.well-known/waypoint`) and stops if it does not let people publish from other websites, or if the packed site is over its limit.
+2. A window opens on `waypoint-callback.html`, a small page of this site, and goes on to the Waypoint's own approval page. The person signs in there if needed and presses Allow. Nobody types a password or a token into this page.
+3. The Waypoint sends the window back to `waypoint-callback.html` with a one-time code (authorization code with PKCE, no client secret), which the page exchanges for a pass that lasts fifteen minutes and only works from this page's origin.
+4. With the pass the page makes the site on the Waypoint if the person has none of that name, sends the same tarball every other host gets, and waits while the Waypoint checks the site, cleans its pages and builds it.
+5. The bar shows the site's address. With "Beam only" ticked, the site is beamed but not broadcast; the bar shows a preview link instead.
+
+What is kept: the Waypoint's address and the name last used, in this browser. The code and the pass are never stored. The two pages talk over a `BroadcastChannel`, which only reaches pages of this origin, and the window drops its link to the page that opened it before it goes to the Waypoint. Plain http is accepted only for a Waypoint on this computer (`localhost`, `127.0.0.1`, `*.localhost`).
+
+The operator of each Waypoint decides which websites may do this: this page's origin (for example `https://browser.hax.cloud`) has to be on that Waypoint's list, or its approval page says so. A Waypoint also sets how many sites a person may have; the bar says so when an account is full.
+
+To try it against a Waypoint running on your own computer, set `WAYPOINT_URL` and run `test/site.test.mjs` (see the Waypoint tests there).
 
 ## Sign-in and cloud storage
 

@@ -18,6 +18,10 @@
  * signs in through auth.js and publishes straight to them from the browser
  * (publish-hosts.js), with no size limit of ours.
  *
+ * A Waypoint (a server that builds a static copy of a site and serves it at
+ * a web address) is always offered: it answers this page directly and needs
+ * no broker, so it works on every copy of the page (publish-waypoint.js).
+ *
  * shell.js creates this with HaxcmsPublish({ send, isRunning, auth }),
  * where send talks to the Worker and auth is HaxcmsAuth.
  */
@@ -185,6 +189,7 @@
     const isRunning = options.isRunning;
     const auth = options.auth;
     const hostsApi = globalThis.HaxcmsPublishHosts;
+    const waypointApi = globalThis.HaxcmsPublishWaypoint;
 
     const button = byId("publish-button");
     const dialog = byId("publish");
@@ -217,8 +222,14 @@
     const nameInput = byId("publish-name");
     const hostAccountText = byId("publish-host-account-text");
     const hostSignOut = byId("publish-host-signout");
+    const waypointPart = byId("publish-waypoint");
+    const waypointAddress = byId("publish-waypoint-address");
+    const waypointName = byId("publish-waypoint-name");
+    const waypointPreview = byId("publish-waypoint-preview");
     // the hosts this page can publish to now: [{ id, label, about, provider }]
     let hosts = [];
+    // the host the person last picked in this dialog (not one it opened on)
+    let chosenHost = "";
 
     // the broker on this deployment, if there is one
     const brokerBase = new URL("/api/", globalThis.location.origin);
@@ -264,7 +275,29 @@
       cancel.disabled = value;
       hostSelect.disabled = value;
       nameInput.disabled = value;
-      submit.textContent = value ? "Publishing…" : "Publish";
+      waypointAddress.disabled = value;
+      waypointName.disabled = value;
+      waypointPreview.disabled = value;
+      showSubmit();
+    }
+
+    // What the button does, in the words for where the site is going: a
+    // Waypoint server takes a beam (to its preview address) and a broadcast
+    // (live); every other place publishes in one step.
+    function showSubmit() {
+      const host = currentHost();
+      if (host && host.id === "waypoint") {
+        const beamOnly = waypointPreview.checked;
+        submit.textContent = busy
+          ? beamOnly
+            ? "Beaming…"
+            : "Broadcasting…"
+          : beamOnly
+            ? "Beam"
+            : "Broadcast";
+        return;
+      }
+      submit.textContent = busy ? "Publishing…" : "Publish";
     }
 
     function chooseSite() {
@@ -286,7 +319,7 @@
 
     function showHostAccount() {
       const host = currentHost();
-      if (!host || host.id === "surge") {
+      if (!host || host.id === "surge" || host.id === "waypoint") {
         return;
       }
       const session = auth.session(host.provider);
@@ -305,12 +338,23 @@
 
     function chooseHost() {
       const host = currentHost();
-      const isSurge = !host || host.id === "surge";
+      const isWaypoint = !!host && host.id === "waypoint";
+      const isSurge = !isWaypoint && (!host || host.id === "surge");
       surgePart.hidden = !isSurge;
-      accountPart.hidden = isSurge;
+      accountPart.hidden = isSurge || isWaypoint;
+      waypointPart.hidden = !isWaypoint;
       limit.hidden = !(isSurge && broker && broker.maxBytes);
       hostAbout.textContent = host ? host.about : "";
-      if (!isSurge) {
+      showSubmit();
+      if (isWaypoint) {
+        const kept = waypointApi.remembered();
+        waypointName.value =
+          waypointApi.cleanName(kept.names && kept.names[siteSelect.value]) ||
+          waypointApi.suggestName(siteSelect.value);
+        if (!waypointAddress.value) {
+          waypointAddress.value = waypointApi.cleanAddress(kept.address) || "";
+        }
+      } else if (!isSurge) {
         const remembered = rememberedHosts()[siteSelect.value];
         nameInput.value =
           remembered && remembered.host === host.id && remembered.name
@@ -374,7 +418,17 @@
           });
         }
       }
-      const previousHost = hostSelect.value;
+      // a Waypoint answers this page directly: no broker and no sign-in set
+      // up on this deployment, only a connection
+      if (waypointApi && !offline) {
+        hosts.push({
+          id: "waypoint",
+          label: "Waypoint server",
+          about:
+            "Beam the site to a Waypoint server, which broadcasts a static copy at a web address. You can add your own domain there. You keep editing here.",
+        });
+      }
+      const previousHost = chosenHost;
       hostSelect.textContent = "";
       for (const host of hosts) {
         const option = document.createElement("option");
@@ -606,10 +660,127 @@
       }
     }
 
+    // publish to a Waypoint (publish-waypoint.js)
+    async function publishToWaypoint() {
+      const site = sites.find((item) => item.name === siteSelect.value);
+      const origin = waypointApi.cleanAddress(waypointAddress.value);
+      const name = waypointApi.cleanName(waypointName.value);
+      if (!site) {
+        setStatus("Pick a site to publish.", "error");
+        siteSelect.focus();
+        return;
+      }
+      if (!origin) {
+        setStatus(
+          "Enter the address of the Waypoint server, like https://waypoint.example.edu.",
+          "error",
+        );
+        waypointAddress.focus();
+        return;
+      }
+      if (!name) {
+        setStatus(
+          "Enter a site name: 3 to 40 characters, a lowercase letter, then lowercase letters, numbers or hyphens.",
+          "error",
+        );
+        waypointName.focus();
+        return;
+      }
+      if (!waypointApi.supported()) {
+        setStatus(
+          "This browser cannot beam to a Waypoint server from here. Use Download site, then beam the file by hand on the Waypoint.",
+          "error",
+        );
+        return;
+      }
+      // opened now, while the click is fresh, or the browser blocks it
+      const opened = waypointApi.openWindow();
+      if (!opened) {
+        setStatus(
+          "The browser blocked the window the Waypoint needs. Allow pop-ups for this page and try again.",
+          "error",
+        );
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = await waypointApi.publish({
+          send,
+          site,
+          origin,
+          name,
+          preview: waypointPreview.checked,
+          setStatus,
+          popup: opened.popup,
+          id: opened.id,
+        });
+        let address = null;
+        try {
+          const url = new URL(result.link);
+          // only ever a link to a web page
+          address = /^https?:$/.test(url.protocol) ? url : null;
+        } catch (e) {
+          address = null;
+        }
+        if (!address) {
+          throw new Error(
+            "Done, but the Waypoint did not say where. Look at My sites on " +
+              origin +
+              ".",
+          );
+        }
+        rememberHost(site.name, "waypoint", name);
+        status.textContent = "";
+        status.dataset.state = "ready";
+        const link = document.createElement("a");
+        link.href = address.href;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = result.preview
+          ? "Open the preview"
+          : address.origin + address.pathname;
+        const manage = document.createElement("a");
+        manage.href = origin + "/";
+        manage.target = "_blank";
+        manage.rel = "noopener";
+        manage.textContent = "My sites";
+        if (result.preview) {
+          status.append(
+            "Beamed. It is at the private preview address, not broadcast yet: ",
+            link,
+            ". To broadcast it, send it again without Beam only ticked, or use ",
+            manage,
+            " on the Waypoint.",
+          );
+        } else {
+          status.append(
+            "Broadcast. Your site is live at ",
+            link,
+            ". To add your own domain or put back an earlier version, use ",
+            manage,
+            " on the Waypoint.",
+          );
+        }
+      } catch (error) {
+        setStatus(String((error && error.message) || error), "error");
+      } finally {
+        try {
+          opened.popup.close();
+        } catch (e) {
+          // already gone
+        }
+        setBusy(false);
+      }
+    }
+
     async function publish(event) {
       event.preventDefault();
       const host = currentHost();
       if (busy || !host) {
+        return;
+      }
+      if (host.id === "waypoint") {
+        publishToWaypoint();
         return;
       }
       if (host.id !== "surge") {
@@ -683,7 +854,11 @@
       chooseSite();
       chooseHost();
     });
-    hostSelect.addEventListener("change", chooseHost);
+    hostSelect.addEventListener("change", () => {
+      chosenHost = hostSelect.value;
+      chooseHost();
+    });
+    waypointPreview.addEventListener("change", showSubmit);
     hostSignOut.addEventListener("click", () => {
       const host = currentHost();
       if (host && host.provider) {
