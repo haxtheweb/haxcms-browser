@@ -19,6 +19,7 @@ import zlib from "node:zlib";
 import puppeteer from "puppeteer-core";
 import { startPagesServer } from "./helpers/pages-server.mjs";
 import { redirectHosts, redirectSurge } from "./helpers/surge-stand-in.mjs";
+import { startWaypoint } from "./helpers/waypoint-stand-in.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = "smoke-site";
@@ -1044,7 +1045,7 @@ test("HAXcms's own Download site gives a zip of the site", async () => {
 
 // ---- publishing (haxtheweb/issues#3341) --------------------------------
 
-test("without a publish broker, Publish points to Download site and the CLI", async () => {
+test("without a publish broker, Publish offers a Waypoint, which needs none", async () => {
   await host.bringToFront();
   await host.click("#publish-button");
   await host.waitForFunction(() => document.getElementById("publish").open, {
@@ -1054,8 +1055,23 @@ test("without a publish broker, Publish points to Download site and the CLI", as
     none: !document.getElementById("publish-none").hidden,
     fields: !document.getElementById("publish-fields").hidden,
     submit: !document.getElementById("publish-submit").hidden,
+    hosts: Array.from(
+      document.querySelectorAll("#publish-host option"),
+      (option) => option.value,
+    ),
+    waypoint: !document.getElementById("publish-waypoint").hidden,
+    surge: !document.getElementById("publish-surge").hidden,
   }));
-  assert.deepEqual(shown, { none: true, fields: false, submit: false });
+  // Surge and the hosts people sign in to need this deployment's publish
+  // service; a Waypoint answers the page directly
+  assert.deepEqual(shown, {
+    none: false,
+    fields: true,
+    submit: true,
+    hosts: ["waypoint"],
+    waypoint: true,
+    surge: false,
+  });
   await host.click("#publish-cancel");
   assert.equal(
     await host.evaluate(() => document.getElementById("publish").open),
@@ -1274,6 +1290,342 @@ test("Publish packs the site and sends it through the broker to Surge", async ()
 });
 
 // ---- signing in (haxtheweb/issues#3341) ------------------------------------
+
+// --- Waypoint ------------------------------------------------------------
+
+async function chooseWaypoint(address, name, preview) {
+  await host.bringToFront();
+  await host.click("#publish-button");
+  await host.waitForFunction(
+    (site) =>
+      document.getElementById("publish").open &&
+      Array.from(document.querySelectorAll("#publish-site option")).some(
+        (option) => option.value === site,
+      ) &&
+      Array.from(document.querySelectorAll("#publish-host option")).some(
+        (option) => option.value === "waypoint",
+      ),
+    { timeout: 15000 },
+    SITE,
+  );
+  await host.select("#publish-site", SITE);
+  await host.select("#publish-host", "waypoint");
+  await host.$eval(
+    "#publish-waypoint-address",
+    (el, value) => {
+      el.value = value;
+    },
+    address,
+  );
+  if (name) {
+    await host.$eval(
+      "#publish-waypoint-name",
+      (el, value) => {
+        el.value = value;
+      },
+      name,
+    );
+  }
+  await host.$eval(
+    "#publish-waypoint-preview",
+    (el, value) => {
+      el.checked = value;
+    },
+    !!preview,
+  );
+}
+
+async function waypointStatus(timeout = 60000) {
+  await host.waitForFunction(
+    () =>
+      ["ready", "error"].includes(
+        document.getElementById("publish-status").dataset.state,
+      ),
+    { timeout },
+  );
+  return host.evaluate(() => ({
+    state: document.getElementById("publish-status").dataset.state,
+    text: document.getElementById("publish-status").textContent,
+    link: (document.querySelector("#publish-status a") || {}).href,
+    stored: JSON.stringify(Object.assign({}, globalThis.localStorage)),
+  }));
+}
+
+// back to how the dialog opens, for the tests that follow
+async function leaveWaypoint() {
+  await host.$eval("#publish-waypoint-preview", (el) => {
+    el.checked = false;
+  });
+  await host.evaluate(() => {
+    // the host last used is remembered per site; forget it so later tests
+    // open on the host they expect
+    globalThis.localStorage.removeItem("haxcms-browser:publish-hosts");
+  });
+  await host.click("#publish-cancel");
+}
+
+test("Publish to a Waypoint: what is typed is checked before any window opens", async () => {
+  await chooseWaypoint("", "");
+  assert.deepEqual(
+    await host.evaluate(() => ({
+      waypoint: !document.getElementById("publish-waypoint").hidden,
+      surge: !document.getElementById("publish-surge").hidden,
+      account: !document.getElementById("publish-account-host").hidden,
+    })),
+    { waypoint: true, surge: false, account: false },
+  );
+  // a first publish suggests a name made from the site's name
+  await host.select("#publish-host", "waypoint");
+  const pagesBefore = (await browser.pages()).length;
+  for (const [address, name, pattern] of [
+    ["", SITE, /address of the Waypoint/],
+    ["http://waypoint.example.edu", SITE, /address of the Waypoint/],
+    ["https://waypoint.example.edu", "Not A Name", /site name/],
+    ["https://waypoint.example.edu", "ab", /site name/],
+    ["https://waypoint.example.edu", "ends-with-", /site name/],
+  ]) {
+    await host.$eval(
+      "#publish-waypoint-address",
+      (el, value) => {
+        el.value = value;
+      },
+      address,
+    );
+    await host.$eval(
+      "#publish-waypoint-name",
+      (el, value) => {
+        el.value = value;
+      },
+      name,
+    );
+    await host.click("#publish-submit");
+    const result = await waypointStatus();
+    assert.equal(result.state, "error");
+    assert.match(result.text, pattern);
+  }
+  assert.equal((await browser.pages()).length, pagesBefore);
+  await leaveWaypoint();
+});
+
+test("Publish to a Waypoint: allowed in its own window, the site is made there and goes live", async () => {
+  const origin = new URL(server.url).origin;
+  const waypoint = await startWaypoint(origin);
+  const unpacked = fs.mkdtempSync(path.join(os.tmpdir(), "haxcms-waypoint-"));
+  const pagesBefore = (await browser.pages()).length;
+  try {
+    await chooseWaypoint(waypoint.url, "my-course");
+    await host.click("#publish-submit");
+    const result = await waypointStatus();
+    assert.equal(result.state, "ready", result.text);
+    assert.equal(result.link, waypoint.url + "/sites/my-course/");
+    assert.match(result.text, /Published\. Your site is live at /);
+    assert.match(result.text, /add your own domain/);
+
+    // the approval window: this origin's own page, from the web server (never
+    // relayed to HAXcms), and gone again
+    assert.ok(
+      server.requests.includes("GET /haxcms-browser/waypoint-callback.html"),
+    );
+    assert.equal((await browser.pages()).length, pagesBefore);
+    // the Waypoint's page could not reach the page that opened the window
+    assert.deepEqual(waypoint.state.openers, ["none"]);
+
+    // the site did not exist there, so it was made, once
+    assert.deepEqual(waypoint.state.created, ["my-course"]);
+    // one upload: the packed site, straight to live
+    assert.equal(waypoint.state.uploads.length, 1);
+    const upload = waypoint.state.uploads[0];
+    assert.equal(upload.name, "my-course");
+    assert.equal(upload.live, true);
+    assert.equal(upload.type, "application/gzip");
+    assert.match(upload.key, /^[A-Za-z0-9_-]{16,100}$/);
+    assert.ok(waypoint.state.polls >= 2);
+    const archive = path.join(unpacked, "site.tar.gz");
+    fs.writeFileSync(archive, upload.body);
+    const extracted = spawnSync("tar", ["-xzf", archive, "-C", unpacked], {
+      encoding: "utf8",
+    });
+    assert.equal(extracted.status, 0, extracted.stderr);
+    assert.ok(fs.existsSync(path.join(unpacked, "site.json")));
+    assert.ok(fs.existsSync(path.join(unpacked, "pages")));
+
+    // every call was this page talking to the Waypoint directly
+    assert.ok(
+      waypoint.state.requests
+        .filter(
+          (request) =>
+            request.path.startsWith("/api/v1/") ||
+            request.path === "/connect/token",
+        )
+        .every((request) => request.origin === origin),
+    );
+
+    // the address and name are remembered; the code and the pass never are
+    assert.match(result.stored, /my-course/);
+    assert.ok(result.stored.includes(waypoint.url));
+    assert.doesNotMatch(result.stored, /wpc_/);
+    for (const pass of waypoint.state.passes) {
+      assert.equal(result.stored.includes(pass), false);
+    }
+    await leaveWaypoint();
+  } finally {
+    waypoint.close();
+    fs.rmSync(unpacked, { recursive: true, force: true });
+  }
+});
+
+test("Publish to a Waypoint: a site the person already has is replaced, and preview first stays private", async () => {
+  const origin = new URL(server.url).origin;
+  const waypoint = await startWaypoint(origin, { sites: ["my-course"] });
+  try {
+    await chooseWaypoint(waypoint.url, "my-course", true);
+    await host.click("#publish-submit");
+    const result = await waypointStatus();
+    assert.equal(result.state, "ready", result.text);
+    assert.match(result.text, /private preview address, not live yet/);
+    assert.equal(
+      result.link,
+      waypoint.url + "/stage/my-course/__waypoint/preview?token=preview1",
+    );
+    // nothing new was made there, and the upload was not sent live
+    assert.deepEqual(waypoint.state.created, []);
+    assert.equal(waypoint.state.uploads.length, 1);
+    assert.equal(waypoint.state.uploads[0].live, false);
+    await leaveWaypoint();
+  } finally {
+    waypoint.close();
+  }
+});
+
+test("Publish to a Waypoint: a declined request, a full account, a failed build, a closed Waypoint and a too-big site", async () => {
+  const origin = new URL(server.url).origin;
+  const cases = [
+    [{}, (w) => (w.state.decline = true), /declined on the Waypoint/, 0],
+    [
+      { sites: ["one", "two"] },
+      null,
+      /already has 2 sites, which is the limit/,
+      0,
+    ],
+    [
+      { failBuild: 'Page home links to "gone", which is not in the site' },
+      null,
+      /links to "gone"/,
+      1,
+    ],
+    [
+      { closed: true },
+      null,
+      /does not let people publish from other websites/,
+      0,
+    ],
+    [{ maxBytes: 100 }, null, /over the .* this Waypoint accepts/, 0],
+  ];
+  for (const [options, before, pattern, uploads] of cases) {
+    const waypoint = await startWaypoint(origin, options);
+    try {
+      if (before) {
+        before(waypoint);
+      }
+      await chooseWaypoint(waypoint.url, "my-course");
+      await host.click("#publish-submit");
+      const result = await waypointStatus();
+      assert.equal(result.state, "error", result.text);
+      assert.match(result.text, pattern);
+      assert.equal(waypoint.state.uploads.length, uploads);
+      await leaveWaypoint();
+    } finally {
+      waypoint.close();
+    }
+  }
+});
+
+// Against a Waypoint running on this computer (scripts/local.sh up in the
+// waypoint repo): set WAYPOINT_URL, for example http://waypoint.localhost:8080.
+// The Waypoint must list this page's origin (http://127.0.0.1) and offer its
+// development sign-in.
+test(
+  "Publish to a real Waypoint on this computer: sign in, allow, and the site is served",
+  { skip: process.env.WAYPOINT_URL ? false : "set WAYPOINT_URL to run" },
+  async () => {
+    const address = process.env.WAYPOINT_URL;
+    const name = "e2e-" + Date.now().toString(36);
+    const email = "e2e-" + Date.now().toString(36) + "@example.org";
+    // the approval window is the real Waypoint: sign in, then press Allow
+    const respond = async (target) => {
+      if (target.type() !== "page") {
+        return;
+      }
+      const page = await target.page();
+      if (!page) {
+        return;
+      }
+      for (let i = 0; i < 480; i++) {
+        let where = "";
+        try {
+          where = page.url();
+        } catch (e) {
+          return;
+        }
+        if (where.startsWith(address + "/auth/login")) {
+          await page.waitForSelector("#email", { timeout: 15000 });
+          await page.type("#email", email);
+          await Promise.all([
+            page.waitForNavigation({ timeout: 15000 }),
+            page.click('button[type="submit"]'),
+          ]);
+        } else if (where.startsWith(address + "/connect/authorize")) {
+          await page.waitForSelector('button[value="allow"]', {
+            timeout: 15000,
+          });
+          await page.click('button[value="allow"]');
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    };
+    browser.on("targetcreated", respond);
+    try {
+      await chooseWaypoint(address, name);
+      await host.click("#publish-submit");
+      // a real build takes a while; say where it stopped if it never ends
+      const until = Date.now() + 150000;
+      for (;;) {
+        const now = await host.evaluate(() => ({
+          state: document.getElementById("publish-status").dataset.state,
+          text: document.getElementById("publish-status").textContent,
+        }));
+        if (now.state === "ready" || now.state === "error") {
+          break;
+        }
+        if (Date.now() > until) {
+          const open = (await browser.pages()).map((page) => page.url());
+          throw new Error(
+            "still publishing: " + now.text + " | windows: " + open.join(" , "),
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const result = await waypointStatus();
+      assert.equal(result.state, "ready", result.text);
+      assert.match(result.text, /Published\. Your site is live at /);
+      const live = new URL(result.link);
+      assert.ok(live.hostname.startsWith(name + "."), result.link);
+      // the Waypoint really serves it: the site's outline and its home page
+      const outline = await fetch(new URL("site.json", live));
+      assert.equal(outline.status, 200);
+      const items = (await outline.json()).items;
+      assert.ok(Array.isArray(items) && items.length > 0);
+      const home = await fetch(live);
+      assert.equal(home.status, 200);
+      assert.match(await home.text(), /<haxcms-site-builder/);
+      assert.doesNotMatch(result.stored, /wpc_/);
+      await leaveWaypoint();
+    } finally {
+      browser.off("targetcreated", respond);
+    }
+  },
+);
 
 test("Sign in runs the provider in a popup and fills in new sites' author", async () => {
   // the real broker routes, with GitHub's sign-in page and token endpoint

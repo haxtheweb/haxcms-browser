@@ -16,7 +16,8 @@
  * them together are most of the front end (about 42,000 files) and a browser
  * only needs the languages its user reads. Source maps, type definitions and
  * notes for developers are not needed to run. sw.js is kept by the browser
- * itself, reset.html must always come from the web server, these lists
+ * itself, reset.html and waypoint-callback.html (where a Waypoint approval
+ * returns to) must always come from the web server, these lists
  * are what the copy is checked against, and robots.txt, sitemap.xml and
  * llms.txt are for crawlers and agents, which read them from the web.
  */
@@ -32,6 +33,7 @@ const NOT_COPIED = [
   MANIFEST,
   "sw.js",
   "reset.html",
+  "waypoint-callback.html",
   ".nojekyll",
   "robots.txt",
   "sitemap.xml",
