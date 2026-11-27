@@ -278,7 +278,26 @@
       waypointAddress.disabled = value;
       waypointName.disabled = value;
       waypointPreview.disabled = value;
-      submit.textContent = value ? "Publishing…" : "Publish";
+      showSubmit();
+    }
+
+    // What the button does, in the words for where the site is going: a
+    // Waypoint server takes a beam (to its preview address) and a broadcast
+    // (live); every other place publishes in one step.
+    function showSubmit() {
+      const host = currentHost();
+      if (host && host.id === "waypoint") {
+        const beamOnly = waypointPreview.checked;
+        submit.textContent = busy
+          ? beamOnly
+            ? "Beaming…"
+            : "Broadcasting…"
+          : beamOnly
+            ? "Beam"
+            : "Broadcast";
+        return;
+      }
+      submit.textContent = busy ? "Publishing…" : "Publish";
     }
 
     function chooseSite() {
@@ -326,6 +345,7 @@
       waypointPart.hidden = !isWaypoint;
       limit.hidden = !(isSurge && broker && broker.maxBytes);
       hostAbout.textContent = host ? host.about : "";
+      showSubmit();
       if (isWaypoint) {
         const kept = waypointApi.remembered();
         waypointName.value =
@@ -403,9 +423,9 @@
       if (waypointApi && !offline) {
         hosts.push({
           id: "waypoint",
-          label: "Waypoint",
+          label: "Waypoint server",
           about:
-            "A static copy of the site at a web address on a Waypoint, where you can also add your own domain. You keep editing here.",
+            "Beam the site to a Waypoint server, which broadcasts a static copy at a web address. You can add your own domain there. You keep editing here.",
         });
       }
       const previousHost = chosenHost;
@@ -652,7 +672,7 @@
       }
       if (!origin) {
         setStatus(
-          "Enter the address of the Waypoint, like https://waypoint.example.edu.",
+          "Enter the address of the Waypoint server, like https://waypoint.example.edu.",
           "error",
         );
         waypointAddress.focus();
@@ -668,7 +688,7 @@
       }
       if (!waypointApi.supported()) {
         setStatus(
-          "This browser cannot publish to a Waypoint from here. Use Download site, then upload it on the Waypoint.",
+          "This browser cannot beam to a Waypoint server from here. Use Download site, then beam the file by hand on the Waypoint.",
           "error",
         );
         return;
@@ -677,7 +697,7 @@
       const opened = waypointApi.openWindow();
       if (!opened) {
         setStatus(
-          "The browser blocked the window the Waypoint needs. Allow pop-ups for this page and publish again.",
+          "The browser blocked the window the Waypoint needs. Allow pop-ups for this page and try again.",
           "error",
         );
         return;
@@ -704,7 +724,7 @@
         }
         if (!address) {
           throw new Error(
-            "Published, but the Waypoint did not say where. Look at My sites on " +
+            "Done, but the Waypoint did not say where. Look at My sites on " +
               origin +
               ".",
           );
@@ -726,15 +746,15 @@
         manage.textContent = "My sites";
         if (result.preview) {
           status.append(
-            "Sent. It is at the private preview address, not live yet: ",
+            "Beamed. It is at the private preview address, not broadcast yet: ",
             link,
-            ". To make it live, publish again without the preview box ticked, or use ",
+            ". To broadcast it, send it again without Beam only ticked, or use ",
             manage,
             " on the Waypoint.",
           );
         } else {
           status.append(
-            "Published. Your site is live at ",
+            "Broadcast. Your site is live at ",
             link,
             ". To add your own domain or put back an earlier version, use ",
             manage,
@@ -838,6 +858,7 @@
       chosenHost = hostSelect.value;
       chooseHost();
     });
+    waypointPreview.addEventListener("change", showSubmit);
     hostSignOut.addEventListener("click", () => {
       const host = currentHost();
       if (host && host.provider) {

@@ -1414,11 +1414,22 @@ test("Publish to a Waypoint: allowed in its own window, the site is made there a
   const pagesBefore = (await browser.pages()).length;
   try {
     await chooseWaypoint(waypoint.url, "my-course");
+    // the button says what it will do, in the Waypoint's two words
+    assert.equal(
+      await host.$eval("#publish-submit", (el) => el.textContent),
+      "Broadcast",
+    );
+    await host.click("#publish-waypoint-preview");
+    assert.equal(
+      await host.$eval("#publish-submit", (el) => el.textContent),
+      "Beam",
+    );
+    await host.click("#publish-waypoint-preview");
     await host.click("#publish-submit");
     const result = await waypointStatus();
     assert.equal(result.state, "ready", result.text);
     assert.equal(result.link, waypoint.url + "/sites/my-course/");
-    assert.match(result.text, /Published\. Your site is live at /);
+    assert.match(result.text, /Broadcast\. Your site is live at /);
     assert.match(result.text, /add your own domain/);
 
     // the approval window: this origin's own page, from the web server (never
@@ -1482,7 +1493,7 @@ test("Publish to a Waypoint: a site the person already has is replaced, and prev
     await host.click("#publish-submit");
     const result = await waypointStatus();
     assert.equal(result.state, "ready", result.text);
-    assert.match(result.text, /private preview address, not live yet/);
+    assert.match(result.text, /private preview address, not broadcast yet/);
     assert.equal(
       result.link,
       waypoint.url + "/stage/my-course/__waypoint/preview?token=preview1",
@@ -1513,12 +1524,7 @@ test("Publish to a Waypoint: a declined request, a full account, a failed build,
       /links to "gone"/,
       1,
     ],
-    [
-      { closed: true },
-      null,
-      /does not let people publish from other websites/,
-      0,
-    ],
+    [{ closed: true }, null, /does not let people beam from other websites/, 0],
     [{ maxBytes: 100 }, null, /over the .* this Waypoint accepts/, 0],
   ];
   for (const [options, before, pattern, uploads] of cases) {
@@ -1608,7 +1614,7 @@ test(
       }
       const result = await waypointStatus();
       assert.equal(result.state, "ready", result.text);
-      assert.match(result.text, /Published\. Your site is live at /);
+      assert.match(result.text, /Broadcast\. Your site is live at /);
       const live = new URL(result.link);
       assert.ok(live.hostname.startsWith(name + "."), result.link);
       // the Waypoint really serves it: the site's outline and its home page

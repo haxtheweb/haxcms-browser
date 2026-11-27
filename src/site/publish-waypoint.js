@@ -175,7 +175,7 @@
     if (!body.connect || body.beam !== true) {
       throw new Error(
         origin +
-          " does not let people publish from other websites. Use Download site, then ask whoever runs that Waypoint to publish it.",
+          " does not let people beam from other websites. Use Download site, then ask whoever runs that Waypoint to take it.",
       );
     }
     const found = {};
@@ -245,7 +245,7 @@
       // the person closed the window instead of answering
       const watching = setInterval(() => {
         if (popup.closed) {
-          finish(new Error("Publishing was cancelled: the window was closed."));
+          finish(new Error("Nothing was sent: the window was closed."));
         }
       }, 500);
       // The return page comes straight from the web server. A browser that
@@ -255,13 +255,13 @@
         if (!sent) {
           finish(
             new Error(
-              "The publish window did not start. Reload this page once, then publish again.",
+              "The Waypoint window did not start. Reload this page once, then try again.",
             ),
           );
         }
       }, 15000);
       const deadline = setTimeout(() => {
-        finish(new Error("Publishing timed out waiting for an answer."));
+        finish(new Error("Timed out waiting for an answer from the Waypoint."));
       }, APPROVAL_MS);
       channel.onmessage = (event) => {
         const message = event.data;
@@ -285,8 +285,8 @@
           finish(
             new Error(
               message.error === "access_denied"
-                ? "Nothing was published: the request was declined on the Waypoint."
-                : "The Waypoint did not approve the publish.",
+                ? "Nothing was sent: the request was declined on the Waypoint."
+                : "The Waypoint did not approve this.",
             ),
           );
         } else {
@@ -320,7 +320,7 @@
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const told = await answer(
         await fetch(address(current.id), { headers: { authorization } }),
-        "Could not ask the Waypoint how the publish is going",
+        "Could not ask the Waypoint how it is going",
       );
       current = told.job;
     }
@@ -399,7 +399,7 @@
     authorize.searchParams.set("state", state);
     const code = await approve(popup, id, authorize.href, state, setStatus);
 
-    setStatus("Allowed. Getting ready to send the site…", "busy");
+    setStatus("Allowed. Getting ready to beam the site…", "busy");
     // the pass lives in this function only: fifteen minutes, never stored
     const granted = await answer(
       await fetch(waypoint.endpoints.token, {
@@ -455,7 +455,7 @@
       target.searchParams.set("live", "1");
     }
     setStatus(
-      "Sending " +
+      "Beaming " +
         packed.files +
         " files (" +
         formatBytes(packed.body.byteLength) +

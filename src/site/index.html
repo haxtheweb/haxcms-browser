@@ -320,8 +320,15 @@
           <label for="publish-site">Site</label>
           <select id="publish-site" required></select>
 
-          <label for="publish-host">Publish to</label>
-          <select id="publish-host"></select>
+          <label for="publish-host">Waypoint</label>
+          <select
+            id="publish-host"
+            aria-describedby="publish-host-what"
+          ></select>
+          <p class="publish-help" id="publish-host-what">
+            A Waypoint is where a site goes next: somewhere that stores it, puts
+            it on the web, or both.
+          </p>
           <p class="publish-help" id="publish-host-about"></p>
 
           <div class="publish-account-host" id="publish-account-host" hidden>
@@ -346,7 +353,9 @@
           </div>
 
           <div class="publish-waypoint" id="publish-waypoint" hidden>
-            <label for="publish-waypoint-address">Waypoint</label>
+            <label for="publish-waypoint-address"
+              >Waypoint server address</label
+            >
             <input
               id="publish-waypoint-address"
               type="text"
@@ -357,7 +366,7 @@
               aria-describedby="publish-waypoint-address-help"
             />
             <p class="publish-help" id="publish-waypoint-address-help">
-              The web address of the Waypoint you publish to. A window opens
+              The web address of the Waypoint server you beam to. A window opens
               there so you can sign in and allow this. You never type a password
               or token here.
             </p>
@@ -373,15 +382,19 @@
             <p class="publish-help" id="publish-waypoint-name-help">
               The name becomes the site's web address on that Waypoint: 3 to 40
               characters, a lowercase letter, then lowercase letters, numbers or
-              hyphens. Publishing to a name you already have replaces what is
+              hyphens. Broadcasting to a name you already have replaces what is
               there; the earlier version can be put back from the Waypoint.
             </p>
 
             <label class="publish-choice">
               <input type="checkbox" id="publish-waypoint-preview" />
-              Send it to the private preview address first, instead of making it
-              live
+              Beam only: send it to the private preview address, and broadcast
+              it later
             </label>
+            <p class="publish-help">
+              Beam sends the site to the Waypoint. Broadcast makes it live at
+              its web address. Left unticked, this does both.
+            </p>
           </div>
 
           <div class="publish-surge" id="publish-surge">
